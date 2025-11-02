@@ -1,1 +1,3 @@
-python_sources()
+python_sources(
+    resolve="gusi-pants-plugins",
+)

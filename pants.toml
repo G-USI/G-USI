@@ -14,18 +14,18 @@ print_stacktrace = true
 [python]
 enable_resolves = true
 enable_lockfile_targets = true
-default_resolve = "python-default"
+default_resolve = "gusi-pants-plugins"
 interpreter_constraints = [">=3.10,<3.15"]
 
 [python.resolves_to_interpreter_constraints]
-python-default = ["==3.11.*"]
+gusi-pants-plugins = ["==3.11.*"]
 
 [cli.alias]
-venv = "export --resolve=python-default"
-lock = "generate-lockfiles --resolve=python-default"
+venv = "export --resolve=gusi-pants-plugins"
+lock = "generate-lockfiles --resolve=gusi-pants-plugins"
 
 [python.resolves]
-python-default = "3rdparty/python/default.lock"
+gusi-pants-plugins = "3rdparty/python/gusi-pants-plugins.lock"
 
 [system-binaries]
 system_binary_paths = ["<PATH>"]
