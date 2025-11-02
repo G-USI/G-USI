@@ -27,10 +27,10 @@ class AlembicMigrationsTarget(TargetGenerator):
 
     This target creates multiple sub-targets:
     - alembic_dep: python_requirement for Alembic
-    - src: python_source for env.py
+    - env.py: python_source for env.py
     - resources, resources2: resource files for alembic.ini and script.py.mako
     - alembic: pex_binary for generic Alembic CLI
-    - migrate: pex_binary for generating migrations
+    - generate: pex_binary for generating migrations
     - upgrade: pex_binary for applying migrations
     - downgrade: pex_binary for rolling back migrations
     """

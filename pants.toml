@@ -19,6 +19,7 @@ interpreter_constraints = [">=3.10,<3.15"]
 
 [python.resolves_to_interpreter_constraints]
 gusi-pants-plugins = ["==3.11.*"]
+test-resolve = [">=3.10,<3.15"]
 
 [cli.alias]
 venv = "export --resolve=gusi-pants-plugins"
@@ -26,6 +27,7 @@ lock = "generate-lockfiles --resolve=gusi-pants-plugins"
 
 [python.resolves]
 gusi-pants-plugins = "3rdparty/python/gusi-pants-plugins.lock"
+test-resolve = "3rdparty/python/test.lock"
 
 [system-binaries]
 system_binary_paths = ["<PATH>"]

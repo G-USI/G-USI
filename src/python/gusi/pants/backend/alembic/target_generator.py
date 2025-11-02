@@ -65,7 +65,7 @@ async def generate_alembic_targets(
             "dependencies": deps,
             "resolve": resolve,
         },
-        address=generator.address.create_generated("src"),
+        address=generator.address.create_generated("env.py"),
     )
 
     # Generate resources for config files
@@ -83,36 +83,53 @@ async def generate_alembic_targets(
         address=generator.address.create_generated("resources2"),
     )
 
-    # Common fields for all pex_binary targets
-    common_pex_fields = {
-        "entry_point": "alembic.config:main",
-        "dependencies": [
-            f":{generator.address.target_name}#src",
-            f":{generator.address.target_name}#resources",
-            f":{generator.address.target_name}#resources2",
-        ],
-        "resolve": resolve,
-        "restartable": True,
-    }
+    # Common dependencies for all pex_binary targets
+    common_deps = [
+        f":{generator.address.target_name}#env.py",
+        f":{generator.address.target_name}#resources",
+        f":{generator.address.target_name}#resources2",
+    ]
 
     # Generate pex_binary targets
+    # Generic Alembic CLI (no defaults)
     alembic_bin = PexBinary(
-        common_pex_fields,
+        {
+            "entry_point": "alembic.config:main",
+            "dependencies": common_deps,
+            "resolve": resolve,
+            "restartable": True,
+        },
         address=generator.address.create_generated("alembic"),
     )
 
-    migrate_bin = PexBinary(
-        common_pex_fields,
-        address=generator.address.create_generated("migrate"),
+    # Convenience binaries with sensible defaults
+    generate_bin = PexBinary(
+        {
+            "entry_point": "gusi.pants.backend.alembic.cli_wrappers:migrate_main",
+            "dependencies": common_deps,
+            "resolve": resolve,
+            "restartable": True,
+        },
+        address=generator.address.create_generated("generate"),
     )
 
     upgrade_bin = PexBinary(
-        common_pex_fields,
+        {
+            "entry_point": "gusi.pants.backend.alembic.cli_wrappers:upgrade_main",
+            "dependencies": common_deps,
+            "resolve": resolve,
+            "restartable": True,
+        },
         address=generator.address.create_generated("upgrade"),
     )
 
     downgrade_bin = PexBinary(
-        common_pex_fields,
+        {
+            "entry_point": "gusi.pants.backend.alembic.cli_wrappers:downgrade_main",
+            "dependencies": common_deps,
+            "resolve": resolve,
+            "restartable": True,
+        },
         address=generator.address.create_generated("downgrade"),
     )
 
@@ -124,7 +141,7 @@ async def generate_alembic_targets(
             resources,
             resources2,
             alembic_bin,
-            migrate_bin,
+            generate_bin,
             upgrade_bin,
             downgrade_bin,
         ],
