@@ -1,5 +1,7 @@
 """Alembic migrations macro for BUILD files."""
 
+from pants.engine.internals.parser import ParseContext
+
 
 def alembic_migrations(
     *,
@@ -60,6 +62,13 @@ def alembic_migrations(
             --config src/python/nslv/mig/my_service/alembic.ini \\
             <alembic commands>
     """
+    # Get BUILD file context to access BUILD file symbols
+    context = ParseContext.get()
+    python_requirement = context.parse_globals["python_requirement"]
+    python_sources = context.parse_globals["python_sources"]
+    resources = context.parse_globals["resources"]
+    pex_binary = context.parse_globals["pex_binary"]
+
     # Build kwargs for resolve parameter
     kwargs = {}
     if resolve:
