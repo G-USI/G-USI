@@ -34,6 +34,7 @@
           # Development tools
           black
           mypy
+          nodejs
           # Secrets
           infisical
         ];

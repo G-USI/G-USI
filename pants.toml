@@ -1,0 +1,31 @@
+[GLOBAL]
+pants_version = "2.29.0"
+pythonpath = ["%(buildroot)s/src/python"]
+backend_packages = [
+  "pants.backend.python",
+  "pants.backend.python.lint.black",
+  "pants.backend.experimental.python.typecheck.pyright",
+  "pants.backend.plugin_development",
+  "gusi.pants.backend.alembic",
+  "gusi.pants.backend.python",
+]
+print_stacktrace = true
+
+[python]
+enable_resolves = true
+enable_lockfile_targets = true
+default_resolve = "python-default"
+interpreter_constraints = [">=3.10,<3.15"]
+
+[python.resolves_to_interpreter_constraints]
+python-default = ["==3.11.*"]
+
+[cli.alias]
+venv = "export --resolve=python-default"
+lock = "generate-lockfiles --resolve=python-default"
+
+[python.resolves]
+python-default = "3rdparty/python/default.lock"
+
+[system-binaries]
+system_binary_paths = ["<PATH>"]
