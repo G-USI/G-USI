@@ -1,21 +1,17 @@
 """Registration module for the Alembic migrations plugin."""
 
-from pants.build_graph.build_file_aliases import BuildFileAliases
-from gusi.pants.backend.alembic.macros import alembic_migrations
+from gusi.pants.backend.alembic import target_generator
+from gusi.pants.backend.alembic.target_types import AlembicMigrationsTarget
 
 
-def build_file_aliases() -> BuildFileAliases:
-    """Export macros to BUILD files."""
-    return BuildFileAliases(
-        objects={
-            "alembic_migrations": alembic_migrations,
-        }
-    )
+def target_types():
+    """Export target types to Pants."""
+    return [AlembicMigrationsTarget]
 
 
 def rules():
     """Register build rules with Pants."""
-    return []
+    return target_generator.rules()
 
 
 def required_backends():
