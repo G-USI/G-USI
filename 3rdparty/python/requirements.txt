@@ -1,0 +1,2 @@
+# Python dependencies for pants-utils
+# (currently empty - pants_requirements() in BUILD file provides Pants for IDE type checking)
