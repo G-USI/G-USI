@@ -42,8 +42,32 @@ async def generate_alembic_targets(
     service_src = generator[AlembicServiceSrcField].value
     resolve = generator[PythonResolveField].value
 
+    # Auto-infer service paths if not specified
+    # Pattern: src/python/nslv/mig/SERVICE -> src/python/nslv/srv/SERVICE
+    if not service_models or not service_src:
+        path_parts = generator.address.spec_path.split("/")
+        if "mig" in path_parts:
+            # Find the service name (directory after 'mig')
+            mig_idx = path_parts.index("mig")
+            if mig_idx + 1 < len(path_parts):
+                service_name = path_parts[mig_idx + 1]
+                # Construct service path by replacing 'mig' with 'srv'
+                service_parts = path_parts[:mig_idx] + ["srv", service_name]
+                service_path = "/".join(service_parts)
+
+                if not service_models:
+                    service_models = f"{service_path}:models"
+                if not service_src:
+                    service_src = f"{service_path}:src"
+
     # Build dependencies for the src target
-    deps = [f":{generator.address.target_name}#alembic_dep"]
+    # Note: Most Python imports are automatically inferred by Pants
+    # However, database drivers (like asyncpg) are loaded dynamically by SQLAlchemy
+    # and must be explicitly included
+    deps = [
+        f":{generator.address.target_name}#alembic_dep",
+        f":{generator.address.target_name}#asyncpg_dep",  # Database driver for PostgreSQL
+    ]
     if service_models:
         deps.append(service_models)
     if service_src:
@@ -56,6 +80,15 @@ async def generate_alembic_targets(
             "resolve": resolve,
         },
         address=generator.address.create_generated("alembic_dep"),
+    )
+
+    # Generate python_requirement for asyncpg (dynamically loaded by SQLAlchemy)
+    asyncpg_req = PythonRequirementTarget(
+        {
+            "requirements": ["asyncpg"],
+            "resolve": resolve,
+        },
+        address=generator.address.create_generated("asyncpg_dep"),
     )
 
     # Generate python_source for env.py
@@ -90,6 +123,9 @@ async def generate_alembic_targets(
         f":{generator.address.target_name}#resources2",
     ]
 
+    # Dependencies for binaries that use gusi CLI wrappers
+    gusi_cli_deps = common_deps + ["3rdparty/pants/g-usi/src/python/gusi/pants/backend/alembic:cli_wrappers"]
+
     # Generate pex_binary targets
     # Generic Alembic CLI (no defaults)
     alembic_bin = PexBinary(
@@ -106,7 +142,7 @@ async def generate_alembic_targets(
     generate_bin = PexBinary(
         {
             "entry_point": "gusi.pants.backend.alembic.cli_wrappers:migrate_main",
-            "dependencies": common_deps,
+            "dependencies": gusi_cli_deps,
             "resolve": resolve,
             "restartable": True,
         },
@@ -116,7 +152,7 @@ async def generate_alembic_targets(
     upgrade_bin = PexBinary(
         {
             "entry_point": "gusi.pants.backend.alembic.cli_wrappers:upgrade_main",
-            "dependencies": common_deps,
+            "dependencies": gusi_cli_deps,
             "resolve": resolve,
             "restartable": True,
         },
@@ -126,7 +162,7 @@ async def generate_alembic_targets(
     downgrade_bin = PexBinary(
         {
             "entry_point": "gusi.pants.backend.alembic.cli_wrappers:downgrade_main",
-            "dependencies": common_deps,
+            "dependencies": gusi_cli_deps,
             "resolve": resolve,
             "restartable": True,
         },
@@ -137,6 +173,7 @@ async def generate_alembic_targets(
         generator,
         [
             alembic_req,
+            asyncpg_req,
             migration_src,
             resources,
             resources2,
