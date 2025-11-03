@@ -29,6 +29,9 @@ Configure your `pants.toml`:
 [GLOBAL]
 pants_version = "2.29.0"  # Or your Pants version
 
+# Add the submodule to Python path so Pants can import the backends
+pythonpath = ["%(buildroot)s/3rdparty/pants/g-usi/src/python"]
+
 # Tell Pants this is a subproject with its own BUILD files
 subproject_roots = ["3rdparty/pants/g-usi"]
 
