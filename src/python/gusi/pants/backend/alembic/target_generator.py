@@ -126,6 +126,10 @@ async def generate_alembic_targets(
     # Dependencies for binaries that use gusi CLI wrappers
     gusi_cli_deps = common_deps + ["3rdparty/pants/g-usi/src/python/gusi/pants/backend/alembic:cli_wrappers"]
 
+    # Environment variable with alembic.ini location (relative to project root)
+    alembic_ini_path = f"{generator.address.spec_path}/alembic.ini"
+    cli_env = {"ALEMBIC_INI_RELPATH": alembic_ini_path}
+
     # Generate pex_binary targets
     # Generic Alembic CLI (no defaults)
     alembic_bin = PexBinary(
@@ -134,6 +138,7 @@ async def generate_alembic_targets(
             "dependencies": common_deps,
             "resolve": resolve,
             "restartable": True,
+            "env": cli_env,
         },
         address=generator.address.create_generated("alembic"),
     )
@@ -145,6 +150,7 @@ async def generate_alembic_targets(
             "dependencies": gusi_cli_deps,
             "resolve": resolve,
             "restartable": True,
+            "env": cli_env,
         },
         address=generator.address.create_generated("generate"),
     )
@@ -155,6 +161,7 @@ async def generate_alembic_targets(
             "dependencies": gusi_cli_deps,
             "resolve": resolve,
             "restartable": True,
+            "env": cli_env,
         },
         address=generator.address.create_generated("upgrade"),
     )
@@ -165,6 +172,7 @@ async def generate_alembic_targets(
             "dependencies": gusi_cli_deps,
             "resolve": resolve,
             "restartable": True,
+            "env": cli_env,
         },
         address=generator.address.create_generated("downgrade"),
     )

@@ -20,28 +20,41 @@ def _find_project_root():
 
 
 def _find_alembic_ini():
-    """Find alembic.ini by searching from project root.
+    """Find alembic.ini by checking environment variable or searching from project root.
 
-    The alembic.ini file is typically in the migration directory, not the project root.
-    We need to find it and return the relative path from project root.
+    The alembic.ini file location can be provided via ALEMBIC_INI_RELPATH environment variable
+    (set by the Pants target generator). If not provided, falls back to searching common patterns.
     """
     # Change to project root if not already there
     project_root = _find_project_root()
     if Path.cwd() != project_root:
         os.chdir(project_root)
 
-    # First check if alembic.ini exists in current directory
+    # First check if path is provided via environment variable (preferred method)
+    if ini_relpath := os.getenv("ALEMBIC_INI_RELPATH"):
+        ini_path = project_root / ini_relpath
+        if ini_path.exists():
+            return ini_relpath
+        # If env var is set but file doesn't exist, log and fall through to search
+        print(f"Warning: ALEMBIC_INI_RELPATH={ini_relpath} set but file not found, falling back to search", file=sys.stderr)
+
+    # Fallback: check if alembic.ini exists in current directory
     if (project_root / "alembic.ini").exists():
         return "alembic.ini"
 
-    # Search for alembic.ini in migration directories
-    # Pattern: look for any alembic.ini under mig/ directories
+    # Fallback: search for alembic.ini in migration directories
+    # Pattern: look for any alembic.ini under mig/ directories (Neuroslav pattern)
     for ini_path in project_root.rglob("mig/*/alembic.ini"):
         # Return path relative to project root
         return str(ini_path.relative_to(project_root))
 
-    # If still not found, try searching anywhere
-    for ini_path in project_root.rglob("alembic.ini"):
+    # Pattern: look for any alembic.ini under srv/*/migrations/ directories (Catalyst pattern)
+    for ini_path in project_root.rglob("srv/*/migrations/alembic.ini"):
+        # Return path relative to project root
+        return str(ini_path.relative_to(project_root))
+
+    # If still not found, try searching anywhere under src/python (avoid finding dependencies in dist/)
+    for ini_path in (project_root / "src" / "python").rglob("alembic.ini"):
         return str(ini_path.relative_to(project_root))
 
     # If not found, return default and let Alembic handle the error
