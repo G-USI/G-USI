@@ -19,6 +19,38 @@ def _find_project_root():
     return current
 
 
+def _setup_source_roots():
+    """Add project source roots to sys.path for imports in env.py.
+
+    This allows env.py to import project modules without manual sys.path manipulation.
+    Tries environment variable first, then auto-detects common patterns.
+    """
+    project_root = _find_project_root()
+
+    # Method 1: Check environment variable (can be set by plugin)
+    if source_roots_env := os.getenv("PANTS_SOURCE_ROOTS"):
+        for src_root in source_roots_env.split(":"):
+            path = project_root / src_root
+            if path.exists() and str(path) not in sys.path:
+                sys.path.insert(0, str(path))
+        return
+
+    # Method 2: Auto-detect common source root patterns
+    # Try in order of specificity
+    patterns = [
+        "src/python",     # Standard Pants Python layout
+        "src/py",         # Alternative
+        "src",            # Generic source directory
+        "lib",            # Some projects use lib/
+    ]
+
+    for pattern in patterns:
+        path = project_root / pattern
+        if path.exists() and str(path) not in sys.path:
+            sys.path.insert(0, str(path))
+            break  # Only add the first matching pattern
+
+
 def _find_alembic_ini():
     """Find alembic.ini by checking environment variable or searching from project root.
 
@@ -63,6 +95,8 @@ def _find_alembic_ini():
 
 def migrate_main():
     """Run 'alembic revision --autogenerate' with optional message."""
+    _setup_source_roots()
+
     # Ensure -c alembic.ini is present if not already specified
     config_idx = 2  # position after -c and config path
     if "-c" not in sys.argv and "--config" not in sys.argv:
@@ -88,6 +122,8 @@ def migrate_main():
 
 def upgrade_main():
     """Run 'alembic upgrade head' by default."""
+    _setup_source_roots()
+
     # Ensure -c alembic.ini is present if not already specified
     if "-c" not in sys.argv and "--config" not in sys.argv:
         config_path = _find_alembic_ini()
@@ -108,6 +144,8 @@ def upgrade_main():
 
 def downgrade_main():
     """Run 'alembic downgrade -1' by default."""
+    _setup_source_roots()
+
     # Ensure -c alembic.ini is present if not already specified
     if "-c" not in sys.argv and "--config" not in sys.argv:
         config_path = _find_alembic_ini()

@@ -121,10 +121,13 @@ Create a BUILD file for your migrations:
 ```python
 # src/python/myapp/migrations/BUILD
 
-# Basic usage (zero config!)
-alembic_migrations()
+# Recommended usage - Pants automatically infers dependencies!
+alembic_migrations(
+    resolve="python-default",
+)
 
-# Or with explicit dependencies
+# Optional: Explicit dependencies (rarely needed)
+# Only use if you have a non-standard project structure
 alembic_migrations(
     service_models="//src/python/myapp/models",
     service_src="//src/python/myapp/base",
@@ -133,6 +136,28 @@ alembic_migrations(
 ```
 
 This auto-generates sub-targets: `alembic_dep`, `src`, `resources`, `alembic`, `migrate`, `upgrade`, `downgrade`.
+
+#### How Automatic Dependency Inference Works
+
+The Alembic backend leverages Pants' built-in Python import inference:
+
+1. **You write clean imports in env.py:**
+   ```python
+   from myapp.models import Base
+   from myapp.settings import settings
+   ```
+
+2. **Pants automatically discovers dependencies** - No need to specify `service_models` in BUILD!
+
+3. **CLI wrappers set up sys.path** - Automatically detects and adds source roots (`src/python`, `src/py`, `src`, or `lib`)
+
+4. **Everything just works** - No manual sys.path manipulation, no explicit dependency declarations
+
+**Benefits:**
+- ✅ Simpler BUILD files - just specify `resolve`
+- ✅ Clean env.py - no path manipulation code
+- ✅ Automatic updates - add/remove models, deps update automatically
+- ✅ Works with any project structure - as long as Pants can see your Python files
 
 Common operations:
 
@@ -216,9 +241,11 @@ mkdir -p src/python/myapp/migrations/versions
 
 alembic_migrations(
     name="migrations",
-    service_models="//src/python/myapp:src",  # Target containing your SQLAlchemy models
     resolve="python-default",
 )
+
+# Note: service_models is optional! Pants automatically infers dependencies
+# from imports in env.py. Only specify if you have a non-standard structure.
 ```
 
 **3. Create alembic.ini:**
@@ -281,15 +308,8 @@ from sqlalchemy import engine_from_config, pool
 from alembic import context
 
 # Import your models' Base to enable autogeneration
-import sys
-from pathlib import Path
-
-# Add the service directory to Python path
-service_dir = Path(__file__).parent.parent
-sys.path.insert(0, str(service_dir))
-
-# Import your SQLAlchemy Base
-from models import Base  # Adjust import based on your project structure
+# Use absolute imports - the CLI wrappers automatically set up sys.path
+from myapp.models import Base  # Adjust to your project structure
 
 # Alembic Config object
 config = context.config
@@ -344,6 +364,11 @@ if context.is_offline_mode():
 else:
     run_migrations_online()
 ```
+
+**Important Notes:**
+- **No sys.path manipulation needed!** The CLI wrappers automatically set up source roots
+- Use clean absolute imports (e.g., `from myapp.models import Base`)
+- Pants will automatically infer the dependency from your import statement
 
 **5. Create script.py.mako:**
 
@@ -468,7 +493,10 @@ asyncpg>=0.29.0  # For PostgreSQL async support
 - Solution: Ensure all migration files are in the `versions/` directory and the database is in sync
 
 **5. Import errors in env.py**
-- Solution: Verify the import path to your models' `Base` class matches your project structure
+- Solution: Use clean absolute imports (e.g., `from myproject.myapp.models import Base`)
+- The CLI wrappers automatically set up source roots in sys.path
+- Pants will infer dependencies from your imports - no need to specify `service_models`
+- Ensure your models are in a target that Pants can discover (use `python_sources()` in BUILD files)
 
 ## Updating the Submodule
 
@@ -550,9 +578,9 @@ interpreter_constraints = [">=3.10,<3.15"]
 Exports the `alembic_migrations()` macro via `BuildFileAliases`.
 
 **Parameters:**
-- `service_models` - (Optional) Target containing SQLAlchemy models
-- `service_src` - (Optional) Target containing service base/settings
-- `resolve` - Python resolver to use
+- `resolve` - (Required) Python resolver to use
+- `service_models` - (Optional, rarely needed) Target containing SQLAlchemy models. Pants automatically infers this from imports in env.py
+- `service_src` - (Optional, rarely needed) Target containing service base/settings. Only needed for non-standard project structures
 
 **Auto-generates targets:**
 - `alembic_dep`, `src`, `resources`, `alembic`, `migrate`, `upgrade`, `downgrade`
