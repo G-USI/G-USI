@@ -7,7 +7,6 @@ Reusable Pants build system utilities for Python projects, including custom back
 This repository provides:
 - **Pants Backends**: Distributable backends that export macros via `BuildFileAliases`
   - `gusi.pants.backend.alembic` - Exports `alembic_migrations()` macro
-  - `gusi.pants.backend.python` - Exports `python_library()` and `python_service()` macros
 
 All backends use the isolated `gusi-pants-plugins` resolve, preventing dependency conflicts with consuming repositories.
 
@@ -38,8 +37,6 @@ subproject_roots = ["3rdparty/pants/g-usi"]
 # Load the backends from the submodule
 backend_packages.add = [
   "gusi.pants.backend.alembic",  # Alembic migrations backend
-  "gusi.pants.backend.python",   # Python library/service backend
-  # Note: pants.backend.python is automatically loaded via required_backends()
 ]
 
 [python]
