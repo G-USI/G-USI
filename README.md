@@ -138,18 +138,15 @@ Common operations:
 
 ```bash
 # Generate a migration
-pants run //src/python/myapp/migrations:migrations -- \
-    --config src/python/myapp/migrations/alembic.ini \
+pants run '//src/python/myapp/migrations#generate' -- \
     revision --autogenerate -m "add_user_table"
 
 # Apply migrations
-pants run //src/python/myapp/migrations:migrations -- \
-    --config src/python/myapp/migrations/alembic.ini \
+pants run '//src/python/myapp/migrations#upgrade' -- \
     upgrade head
 
 # Rollback one migration
-pants run //src/python/myapp/migrations:migrations -- \
-    --config src/python/myapp/migrations/alembic.ini \
+pants run '//src/python/myapp/migrations#downgrade' -- \
     downgrade -1
 ```
 
@@ -187,6 +184,291 @@ python_library(
     resolve="python-default",
 )
 ```
+
+## Documentation
+
+### Alembic Backend - Complete Setup Guide
+
+#### Minimum Required Files
+
+To use the Alembic backend, create these files in your migrations directory (e.g., `src/python/myapp/migrations/`):
+
+1. **BUILD** - Pants build configuration with `alembic_migrations()` macro
+2. **alembic.ini** - Alembic configuration file
+3. **env.py** - Alembic environment script that imports your models
+4. **script.py.mako** - Template for generating migration files
+5. **versions/** - Empty directory where migration files will be generated
+
+**Important:** No `__init__.py` files or `.gitkeep` files are needed!
+
+#### Step-by-Step Setup
+
+**1. Create the migrations directory:**
+
+```bash
+mkdir -p src/python/myapp/migrations/versions
+```
+
+**2. Create BUILD file:**
+
+```python
+# src/python/myapp/migrations/BUILD
+
+alembic_migrations(
+    name="migrations",
+    service_models="//src/python/myapp:src",  # Target containing your SQLAlchemy models
+    resolve="python-default",
+)
+```
+
+**3. Create alembic.ini:**
+
+```ini
+# src/python/myapp/migrations/alembic.ini
+
+[alembic]
+# Use %(here)s to make config portable - it resolves to the directory containing this file
+script_location = %(here)s
+
+# Database URL (can be overridden via environment variable in env.py)
+sqlalchemy.url = postgresql://user:pass@localhost:5432/mydb
+
+[loggers]
+keys = root,sqlalchemy,alembic
+
+[handlers]
+keys = console
+
+[formatters]
+keys = generic
+
+[logger_root]
+level = WARN
+handlers = console
+qualname =
+
+[logger_sqlalchemy]
+level = WARN
+handlers =
+qualname = sqlalchemy.engine
+
+[logger_alembic]
+level = INFO
+handlers =
+qualname = alembic
+
+[handler_console]
+class = StreamHandler
+args = (sys.stderr,)
+level = NOTSET
+formatter = generic
+
+[formatter_generic]
+format = %(levelname)-5.5s [%(name)s] %(message)s
+datefmt = %H:%M:%S
+```
+
+**4. Create env.py:**
+
+```python
+# src/python/myapp/migrations/env.py
+
+"""Alembic environment configuration."""
+
+from logging.config import fileConfig
+import os
+from sqlalchemy import engine_from_config, pool
+from alembic import context
+
+# Import your models' Base to enable autogeneration
+import sys
+from pathlib import Path
+
+# Add the service directory to Python path
+service_dir = Path(__file__).parent.parent
+sys.path.insert(0, str(service_dir))
+
+# Import your SQLAlchemy Base
+from models import Base  # Adjust import based on your project structure
+
+# Alembic Config object
+config = context.config
+
+# Interpret the config file for Python logging
+if config.config_file_name is not None:
+    fileConfig(config.config_file_name)
+
+# Set target metadata for autogenerate support
+target_metadata = Base.metadata
+
+
+def get_url():
+    """Get database URL from environment or config."""
+    return os.getenv("DATABASE_URL", config.get_main_option("sqlalchemy.url"))
+
+
+def run_migrations_offline() -> None:
+    """Run migrations in 'offline' mode."""
+    url = get_url()
+    context.configure(
+        url=url,
+        target_metadata=target_metadata,
+        literal_binds=True,
+        dialect_opts={"paramstyle": "named"},
+    )
+
+    with context.begin_transaction():
+        context.run_migrations()
+
+
+def run_migrations_online() -> None:
+    """Run migrations in 'online' mode."""
+    configuration = config.get_section(config.config_ini_section, {})
+    configuration["sqlalchemy.url"] = get_url()
+
+    connectable = engine_from_config(
+        configuration,
+        prefix="sqlalchemy.",
+        poolclass=pool.NullPool,
+    )
+
+    with connectable.connect() as connection:
+        context.configure(connection=connection, target_metadata=target_metadata)
+
+        with context.begin_transaction():
+            context.run_migrations()
+
+
+if context.is_offline_mode():
+    run_migrations_offline()
+else:
+    run_migrations_online()
+```
+
+**5. Create script.py.mako:**
+
+```mako
+# src/python/myapp/migrations/script.py.mako
+
+"""${message}
+
+Revision ID: ${up_revision}
+Revises: ${down_revision | comma,n}
+Create Date: ${create_date}
+
+"""
+from typing import Sequence, Union
+
+from alembic import op
+import sqlalchemy as sa
+${imports if imports else ""}
+
+# revision identifiers, used by Alembic.
+revision: str = ${repr(up_revision)}
+down_revision: Union[str, None] = ${repr(down_revision)}
+branch_labels: Union[str, Sequence[str], None] = ${repr(branch_labels)}
+depends_on: Union[str, Sequence[str], None] = ${repr(depends_on)}
+
+
+def upgrade() -> None:
+    ${upgrades if upgrades else "pass"}
+
+
+def downgrade() -> None:
+    ${downgrades if downgrades else "pass"}
+```
+
+#### Generated Targets
+
+The `alembic_migrations()` macro automatically generates these targets:
+
+- **`#generate`** - Generate new migrations with auto-config detection (uses `migrate_main` wrapper)
+- **`#upgrade`** - Apply migrations to database (uses `upgrade_main` wrapper)
+- **`#downgrade`** - Rollback migrations (uses `downgrade_main` wrapper)
+- **`#alembic`** - Raw Alembic CLI for advanced operations
+
+The `#generate`, `#upgrade`, and `#downgrade` targets automatically find your `alembic.ini` file, so you don't need to specify `--config` manually.
+
+#### Usage Commands
+
+```bash
+# Generate a new migration (auto-detects alembic.ini)
+pants run '//src/python/myapp/migrations#generate' -- \
+    revision --autogenerate -m "add_user_table"
+
+# Apply all pending migrations
+pants run '//src/python/myapp/migrations#upgrade' -- \
+    upgrade head
+
+# Rollback the last migration
+pants run '//src/python/myapp/migrations#downgrade' -- \
+    downgrade -1
+
+# Advanced: Use raw alembic CLI (requires --config flag)
+pants run '//src/python/myapp/migrations#alembic' -- \
+    --config src/python/myapp/migrations/alembic.ini \
+    current
+```
+
+#### Complete Working Example
+
+Here's a minimal working example showing all required files:
+
+```
+src/python/myapp/
+├── __init__.py
+├── models.py              # Your SQLAlchemy models
+├── BUILD
+├── requirements.txt       # Include: sqlalchemy>=2.0.0, alembic>=1.13.0
+└── migrations/
+    ├── BUILD              # alembic_migrations() macro
+    ├── alembic.ini        # script_location = %(here)s
+    ├── env.py             # Imports models.Base
+    ├── script.py.mako     # Migration template
+    └── versions/          # Empty directory (no files needed)
+```
+
+**models.py example:**
+
+```python
+from sqlalchemy import String, Integer
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+class Base(DeclarativeBase):
+    pass
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    username: Mapped[str] = mapped_column(String(50), unique=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True)
+```
+
+**requirements.txt:**
+
+```
+sqlalchemy>=2.0.0
+alembic>=1.13.0
+asyncpg>=0.29.0  # For PostgreSQL async support
+```
+
+#### Common Issues
+
+**1. "Can't find Python file env.py"**
+- Solution: Ensure `script_location = %(here)s` in `alembic.ini` (not an absolute path)
+
+**2. "script.py.mako not found"**
+- Solution: Create the `script.py.mako` template file in your migrations directory
+
+**3. "Target database is not up to date"**
+- Solution: Run `pants run '//src/python/myapp/migrations#upgrade'` before generating new migrations
+
+**4. "Can't locate revision"**
+- Solution: Ensure all migration files are in the `versions/` directory and the database is in sync
+
+**5. Import errors in env.py**
+- Solution: Verify the import path to your models' `Base` class matches your project structure
 
 ## Updating the Submodule
 
