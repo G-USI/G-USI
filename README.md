@@ -121,16 +121,8 @@ Create a BUILD file for your migrations:
 ```python
 # src/python/myapp/migrations/BUILD
 
-# Recommended usage - Pants automatically infers dependencies!
+# Simple, zero-config usage - Pants automatically infers dependencies!
 alembic_migrations(
-    resolve="python-default",
-)
-
-# Optional: Explicit dependencies (rarely needed)
-# Only use if you have a non-standard project structure
-alembic_migrations(
-    service_models="//src/python/myapp/models",
-    service_src="//src/python/myapp/base",
     resolve="python-default",
 )
 ```
@@ -243,9 +235,6 @@ alembic_migrations(
     name="migrations",
     resolve="python-default",
 )
-
-# Note: service_models is optional! Pants automatically infers dependencies
-# from imports in env.py. Only specify if you have a non-standard structure.
 ```
 
 **3. Create alembic.ini:**
@@ -579,8 +568,8 @@ Exports the `alembic_migrations()` macro via `BuildFileAliases`.
 
 **Parameters:**
 - `resolve` - (Required) Python resolver to use
-- `service_models` - (Optional, rarely needed) Target containing SQLAlchemy models. Pants automatically infers this from imports in env.py
-- `service_src` - (Optional, rarely needed) Target containing service base/settings. Only needed for non-standard project structures
+
+All dependencies are automatically inferred from imports in env.py. No manual configuration needed!
 
 **Auto-generates targets:**
 - `alembic_dep`, `src`, `resources`, `alembic`, `migrate`, `upgrade`, `downgrade`

@@ -3,23 +3,8 @@
 from pants.backend.python.target_types import PythonResolveField, PythonRequirementTarget
 from pants.engine.target import (
     COMMON_TARGET_FIELDS,
-    StringField,
     TargetGenerator,
 )
-
-
-class AlembicServiceModelsField(StringField):
-    """Target address for service models."""
-
-    alias = "service_models"
-    help = "Target address for service models (optional, usually inferred)."
-
-
-class AlembicServiceSrcField(StringField):
-    """Target address for service base/settings."""
-
-    alias = "service_src"
-    help = "Target address for service base/settings (optional, usually inferred)."
 
 
 class AlembicMigrationsTarget(TargetGenerator):
@@ -33,13 +18,14 @@ class AlembicMigrationsTarget(TargetGenerator):
     - generate: pex_binary for generating migrations
     - upgrade: pex_binary for applying migrations
     - downgrade: pex_binary for rolling back migrations
+
+    Dependencies are automatically inferred from imports in env.py.
+    The CLI wrappers automatically set up sys.path for imports to work.
     """
 
     alias = "alembic_migrations"
     core_fields = (
         *COMMON_TARGET_FIELDS,
-        AlembicServiceModelsField,
-        AlembicServiceSrcField,
         PythonResolveField,
     )
     help = "Generates Alembic migration infrastructure targets."

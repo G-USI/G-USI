@@ -18,8 +18,6 @@ from pants.engine.unions import UnionRule
 
 from gusi.pants.backend.alembic.target_types import (
     AlembicMigrationsTarget,
-    AlembicServiceModelsField,
-    AlembicServiceSrcField,
 )
 
 
@@ -38,40 +36,15 @@ async def generate_alembic_targets(
     generator = request.generator
 
     # Get field values
-    service_models = generator[AlembicServiceModelsField].value
-    service_src = generator[AlembicServiceSrcField].value
     resolve = generator[PythonResolveField].value
 
-    # Auto-infer service paths if not specified
-    # Pattern: src/python/nslv/mig/SERVICE -> src/python/nslv/srv/SERVICE
-    if not service_models or not service_src:
-        path_parts = generator.address.spec_path.split("/")
-        if "mig" in path_parts:
-            # Find the service name (directory after 'mig')
-            mig_idx = path_parts.index("mig")
-            if mig_idx + 1 < len(path_parts):
-                service_name = path_parts[mig_idx + 1]
-                # Construct service path by replacing 'mig' with 'srv'
-                service_parts = path_parts[:mig_idx] + ["srv", service_name]
-                service_path = "/".join(service_parts)
-
-                if not service_models:
-                    service_models = f"{service_path}:models"
-                if not service_src:
-                    service_src = f"{service_path}:src"
-
-    # Build dependencies for the src target
-    # Note: Most Python imports are automatically inferred by Pants
-    # However, database drivers (like asyncpg) are loaded dynamically by SQLAlchemy
-    # and must be explicitly included
+    # Build dependencies for the env.py target
+    # Pants automatically infers Python imports from env.py
+    # We only need to explicitly include dynamically loaded dependencies
     deps = [
         f":{generator.address.target_name}#alembic_dep",
         f":{generator.address.target_name}#asyncpg_dep",  # Database driver for PostgreSQL
     ]
-    if service_models:
-        deps.append(service_models)
-    if service_src:
-        deps.append(service_src)
 
     # Generate python_requirement for Alembic
     alembic_req = PythonRequirementTarget(
