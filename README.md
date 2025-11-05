@@ -121,10 +121,8 @@ Create a BUILD file for your migrations:
 ```python
 # src/python/myapp/migrations/BUILD
 
-# Simple, zero-config usage - Pants automatically infers dependencies!
-alembic_migrations(
-    resolve="python-default",
-)
+# Zero-config usage - Pants automatically infers everything!
+alembic_migrations()
 ```
 
 This auto-generates sub-targets: `alembic_dep`, `src`, `resources`, `alembic`, `migrate`, `upgrade`, `downgrade`.
@@ -146,10 +144,11 @@ The Alembic backend leverages Pants' built-in Python import inference:
 4. **Everything just works** - No manual sys.path manipulation, no explicit dependency declarations
 
 **Benefits:**
-- ✅ Simpler BUILD files - just specify `resolve`
+- ✅ Zero-config BUILD files - literally just `alembic_migrations()`
 - ✅ Clean env.py - no path manipulation code
 - ✅ Automatic updates - add/remove models, deps update automatically
 - ✅ Works with any project structure - as long as Pants can see your Python files
+- ✅ Optional customization - specify `resolve` only if you need a non-default resolver
 
 Common operations:
 
@@ -208,15 +207,32 @@ python_library(
 
 #### Minimum Required Files
 
-To use the Alembic backend, create these files in your migrations directory (e.g., `src/python/myapp/migrations/`):
+To use the Alembic backend, create these **4 minimal files** in your migrations directory (e.g., `src/python/myapp/migrations/`):
 
-1. **BUILD** - Pants build configuration with `alembic_migrations()` macro
-2. **alembic.ini** - Alembic configuration file
-3. **env.py** - Alembic environment script that imports your models
-4. **script.py.mako** - Template for generating migration files
-5. **versions/** - Empty directory where migration files will be generated
+| File | Lines | Purpose |
+|------|-------|---------|
+| **BUILD** | 1 | `alembic_migrations()` - that's it! |
+| **alembic.ini** | 2 | Just `[alembic]` section with `script_location` |
+| **env.py** | 37 | Import Base, configure migrations |
+| **script.py.mako** | 22 | Template for generated migrations |
+| **versions/** | 0 | Empty directory (migrations go here) |
 
-**Important:** No `__init__.py` files or `.gitkeep` files are needed!
+**Total: 62 lines** (vs 150+ in typical Alembic setup with logging config)
+
+**Key differences from standard Alembic:**
+- ✅ **No logging configuration** - Alembic has sensible defaults
+- ✅ **No database URL in config** - Use environment variable instead
+- ✅ **No sys.path manipulation** - Plugin handles it automatically
+- ✅ **No type hints required** - Simpler code
+- ✅ **No `__init__.py` files** - Not needed
+- ✅ **No explicit dependencies** - Pants infers everything
+
+Files you need:
+1. **BUILD** - One line: `alembic_migrations()`
+2. **alembic.ini** - One config line
+3. **env.py** - Import Base, run migrations
+4. **script.py.mako** - Migration template
+5. **versions/** - Empty directory
 
 #### Step-by-Step Setup
 
@@ -233,7 +249,6 @@ mkdir -p src/python/myapp/migrations/versions
 
 alembic_migrations(
     name="migrations",
-    resolve="python-default",
 )
 ```
 
@@ -243,107 +258,48 @@ alembic_migrations(
 # src/python/myapp/migrations/alembic.ini
 
 [alembic]
-# Use %(here)s to make config portable - it resolves to the directory containing this file
 script_location = %(here)s
-
-# Database URL (can be overridden via environment variable in env.py)
-sqlalchemy.url = postgresql://user:pass@localhost:5432/mydb
-
-[loggers]
-keys = root,sqlalchemy,alembic
-
-[handlers]
-keys = console
-
-[formatters]
-keys = generic
-
-[logger_root]
-level = WARN
-handlers = console
-qualname =
-
-[logger_sqlalchemy]
-level = WARN
-handlers =
-qualname = sqlalchemy.engine
-
-[logger_alembic]
-level = INFO
-handlers =
-qualname = alembic
-
-[handler_console]
-class = StreamHandler
-args = (sys.stderr,)
-level = NOTSET
-formatter = generic
-
-[formatter_generic]
-format = %(levelname)-5.5s [%(name)s] %(message)s
-datefmt = %H:%M:%S
 ```
+
+**That's it!** Just one line:
+- `script_location = %(here)s` tells Alembic where to find migration files
+- Database URL? Use environment variable in env.py instead
+- Logging? Alembic has sensible defaults
 
 **4. Create env.py:**
 
 ```python
 # src/python/myapp/migrations/env.py
 
-"""Alembic environment configuration."""
-
-from logging.config import fileConfig
-import os
-from sqlalchemy import engine_from_config, pool
 from alembic import context
+from sqlalchemy import engine_from_config, pool
+import os
 
-# Import your models' Base to enable autogeneration
-# Use absolute imports - the CLI wrappers automatically set up sys.path
-from myapp.models import Base  # Adjust to your project structure
+# Import your models - adjust to your project structure
+from myapp.models import Base
 
-# Alembic Config object
 config = context.config
-
-# Interpret the config file for Python logging
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
-
-# Set target metadata for autogenerate support
 target_metadata = Base.metadata
 
 
 def get_url():
-    """Get database URL from environment or config."""
-    return os.getenv("DATABASE_URL", config.get_main_option("sqlalchemy.url"))
+    return os.getenv("DATABASE_URL", "postgresql://localhost/mydb")
 
 
-def run_migrations_offline() -> None:
-    """Run migrations in 'offline' mode."""
-    url = get_url()
-    context.configure(
-        url=url,
-        target_metadata=target_metadata,
-        literal_binds=True,
-        dialect_opts={"paramstyle": "named"},
-    )
-
+def run_migrations_offline():
+    context.configure(url=get_url(), target_metadata=target_metadata, literal_binds=True)
     with context.begin_transaction():
         context.run_migrations()
 
 
-def run_migrations_online() -> None:
-    """Run migrations in 'online' mode."""
-    configuration = config.get_section(config.config_ini_section, {})
-    configuration["sqlalchemy.url"] = get_url()
-
+def run_migrations_online():
     connectable = engine_from_config(
-        configuration,
+        {"sqlalchemy.url": get_url()},
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
-
     with connectable.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata)
-
         with context.begin_transaction():
             context.run_migrations()
 
@@ -354,10 +310,10 @@ else:
     run_migrations_online()
 ```
 
-**Important Notes:**
-- **No sys.path manipulation needed!** The CLI wrappers automatically set up source roots
-- Use clean absolute imports (e.g., `from myapp.models import Base`)
-- Pants will automatically infer the dependency from your import statement
+**That's it!** The essentials:
+- Import your models' `Base`
+- Set `target_metadata = Base.metadata`
+- Database URL from environment variable (optional fallback)
 
 **5. Create script.py.mako:**
 
@@ -369,28 +325,28 @@ else:
 Revision ID: ${up_revision}
 Revises: ${down_revision | comma,n}
 Create Date: ${create_date}
-
 """
-from typing import Sequence, Union
-
 from alembic import op
 import sqlalchemy as sa
 ${imports if imports else ""}
 
-# revision identifiers, used by Alembic.
-revision: str = ${repr(up_revision)}
-down_revision: Union[str, None] = ${repr(down_revision)}
-branch_labels: Union[str, Sequence[str], None] = ${repr(branch_labels)}
-depends_on: Union[str, Sequence[str], None] = ${repr(depends_on)}
+revision = ${repr(up_revision)}
+down_revision = ${repr(down_revision)}
+branch_labels = ${repr(branch_labels)}
+depends_on = ${repr(depends_on)}
 
 
-def upgrade() -> None:
+def upgrade():
     ${upgrades if upgrades else "pass"}
 
 
-def downgrade() -> None:
+def downgrade():
     ${downgrades if downgrades else "pass"}
 ```
+
+**Simplified:**
+- No type hints (Alembic doesn't require them)
+- Clean and minimal
 
 #### Generated Targets
 
@@ -426,21 +382,22 @@ pants run '//src/python/myapp/migrations#alembic' -- \
 
 #### Complete Working Example
 
-Here's a minimal working example showing all required files:
+Here's the **absolute minimum** to get started:
 
 ```
 src/python/myapp/
-├── __init__.py
-├── models.py              # Your SQLAlchemy models
-├── BUILD
-├── requirements.txt       # Include: sqlalchemy>=2.0.0, alembic>=1.13.0
+├── models.py              # Your SQLAlchemy models with Base
+├── BUILD                  # python_sources()
+├── requirements.txt       # sqlalchemy>=2.0.0, alembic>=1.13.0
 └── migrations/
-    ├── BUILD              # alembic_migrations() macro
-    ├── alembic.ini        # script_location = %(here)s
-    ├── env.py             # Imports models.Base
-    ├── script.py.mako     # Migration template
-    └── versions/          # Empty directory (no files needed)
+    ├── BUILD              # alembic_migrations() - 1 line!
+    ├── alembic.ini        # 2 lines: [alembic] + script_location
+    ├── env.py             # 37 lines: import Base, run migrations
+    ├── script.py.mako     # 22 lines: migration template
+    └── versions/          # Empty directory
 ```
+
+**No `__init__.py` files needed anywhere!**
 
 **models.py example:**
 
@@ -567,9 +524,9 @@ interpreter_constraints = [">=3.10,<3.15"]
 Exports the `alembic_migrations()` macro via `BuildFileAliases`.
 
 **Parameters:**
-- `resolve` - (Required) Python resolver to use
+- `resolve` - (Optional) Python resolver to use. Defaults to `python-default` if not specified.
 
-All dependencies are automatically inferred from imports in env.py. No manual configuration needed!
+All dependencies are automatically inferred from imports in env.py. Zero configuration needed!
 
 **Auto-generates targets:**
 - `alembic_dep`, `src`, `resources`, `alembic`, `migrate`, `upgrade`, `downgrade`
