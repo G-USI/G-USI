@@ -31,8 +31,8 @@ pants_version = "2.29.0"  # Or your Pants version
 # Add the submodule to Python path so Pants can import the backends
 pythonpath = ["%(buildroot)s/3rdparty/pants/g-usi/src/python"]
 
-# Tell Pants this is a subproject with its own BUILD files
-subproject_roots = ["3rdparty/pants/g-usi"]
+# Ignore the submodule directory to prevent Pants from scanning its BUILD files
+pants_ignore.add = ["3rdparty/pants/g-usi"]
 
 # Load the backends from the submodule
 backend_packages.add = [
@@ -47,8 +47,6 @@ interpreter_constraints = [">=3.10,<3.15"]
 # Your project's resolves
 [python.resolves]
 python-default = "3rdparty/python/default.lock"
-# Add the submodule's resolve (required for building the plugins)
-gusi-pants-plugins = "3rdparty/pants/g-usi/3rdparty/python/gusi-pants-plugins.lock"
 # Add any additional resolves you need (e.g., python-cuda, python-rocm)
 
 # Optional: Set specific interpreter versions per resolve
@@ -81,11 +79,9 @@ pants generate-lockfiles --resolve=python-default
 ```
 
 **Important Notes:**
-- You **must** define the `gusi-pants-plugins` resolve in your parent project's `pants.toml` pointing to the submodule's lockfile - this allows Pants to build the plugin code
-- The `gusi-pants-plugins` resolve is completely isolated from your project's resolves (e.g., `python-default`), preventing dependency conflicts
+- You **must** add the submodule path to `pants_ignore` (e.g., `pants_ignore.add = ["3rdparty/pants/g-usi"]`) to prevent Pants from scanning the plugin's BUILD files during exports
+- The plugin loads via `pythonpath` and doesn't need its own resolve or `subproject_roots` configuration
 - You don't need to add `pants.backend.plugin_development` to your backends - it's only used internally by the submodule
-- The submodule is treated as a separate Pants subproject with independent configuration
-- Each resolve has its own lockfile and dependency set
 
 ### Option 2: Copy Files (Not Recommended)
 
