@@ -1,6 +1,8 @@
 """Target generator for Alembic migrations."""
 
+import os
 from dataclasses import dataclass
+from pathlib import Path, PurePath
 
 from pants.backend.python.target_types import (
     PexBinary,
@@ -9,15 +11,22 @@ from pants.backend.python.target_types import (
     PythonSourceTarget,
 )
 from pants.core.target_types import ResourceTarget
-from pants.engine.rules import collect_rules, rule
+from pants.engine.rules import collect_rules, rule, Get
 from pants.engine.target import (
     GeneratedTargets,
     GenerateTargetsRequest,
 )
 from pants.engine.unions import UnionRule
+from pants.source.source_root import SourceRoot, SourceRootRequest
 
 from gusi.pants.backend.alembic.target_types import (
+    AlembicCommandsPyTarget,
     AlembicMigrationsTarget,
+)
+from gusi.pants.backend.alembic.templates import (
+    ALEMBIC_INI_TEMPLATE,
+    ENV_PY_TEMPLATE,
+    SCRIPT_MAKO_TEMPLATE,
 )
 
 
@@ -28,12 +37,77 @@ class GenerateFromAlembicMigrationsRequest(GenerateTargetsRequest):
     generate_from = AlembicMigrationsTarget
 
 
+def _get_buildroot() -> Path:
+    """Find the project buildroot by searching for pants.toml.
+
+    Returns:
+        Absolute path to the buildroot directory
+
+    Raises:
+        RuntimeError: If pants.toml cannot be found
+    """
+    # First try BUILD_ROOT env var (set by Pants)
+    buildroot = os.getenv("BUILD_ROOT")
+    if buildroot:
+        return Path(buildroot)
+
+    # Search upwards for pants.toml
+    current = Path.cwd().resolve()
+    while current != current.parent:
+        if (current / "pants.toml").exists():
+            return current
+        current = current.parent
+
+    raise RuntimeError("Could not find pants.toml - not in a Pants project?")
+
+
+def _ensure_alembic_boilerplate(spec_path: str) -> None:
+    """Generate Alembic boilerplate files if they don't exist.
+
+    Args:
+        spec_path: Directory path where the alembic_migrations target is defined
+                   (relative to buildroot, e.g., "src/python/myapp/migrations")
+    """
+    # Resolve paths relative to buildroot, not cwd
+    buildroot = _get_buildroot()
+    migration_dir = buildroot / spec_path
+    config_path = f"{spec_path}/alembic.ini"
+
+    # Generate alembic.ini if missing
+    alembic_ini_path = migration_dir / "alembic.ini"
+    if not alembic_ini_path.exists():
+        content = ALEMBIC_INI_TEMPLATE.format(script_location=spec_path)
+        alembic_ini_path.write_text(content)
+        print(f"✓ Generated {alembic_ini_path}")
+
+    # Generate env.py if missing
+    env_py_path = migration_dir / "env.py"
+    if not env_py_path.exists():
+        env_py_path.write_text(ENV_PY_TEMPLATE)
+        print(f"✓ Generated {env_py_path}")
+
+    # Generate script.py.mako if missing
+    script_mako_path = migration_dir / "script.py.mako"
+    if not script_mako_path.exists():
+        script_mako_path.write_text(SCRIPT_MAKO_TEMPLATE)
+        print(f"✓ Generated {script_mako_path}")
+
+    # Create versions directory if missing
+    versions_dir = migration_dir / "versions"
+    if not versions_dir.exists():
+        versions_dir.mkdir(parents=True, exist_ok=True)
+        print(f"✓ Created {versions_dir}/")
+
+
 @rule
 async def generate_alembic_targets(
     request: GenerateFromAlembicMigrationsRequest,
 ) -> GeneratedTargets:
     """Generate all Alembic-related targets from an alembic_migrations target."""
     generator = request.generator
+
+    # Generate boilerplate files if missing
+    _ensure_alembic_boilerplate(generator.address.spec_path)
 
     # Get field values
     resolve = generator[PythonResolveField].value
@@ -43,7 +117,17 @@ async def generate_alembic_targets(
     # We only need to explicitly include dynamically loaded dependencies
     deps = [
         f":{generator.address.target_name}#alembic_dep",
-        f":{generator.address.target_name}#asyncpg_dep",  # Database driver for PostgreSQL
+        # PostgreSQL drivers
+        f":{generator.address.target_name}#psycopg2_dep",
+        f":{generator.address.target_name}#asyncpg_dep",
+        # MySQL/MariaDB drivers
+        f":{generator.address.target_name}#pymysql_dep",
+        f":{generator.address.target_name}#aiomysql_dep",
+        # SQLite drivers
+        f":{generator.address.target_name}#aiosqlite_dep",
+        # SQL Server drivers
+        f":{generator.address.target_name}#pyodbc_dep",
+        f":{generator.address.target_name}#aioodbc_dep",
     ]
 
     # Generate python_requirement for Alembic
@@ -55,13 +139,64 @@ async def generate_alembic_targets(
         address=generator.address.create_generated("alembic_dep"),
     )
 
-    # Generate python_requirement for asyncpg (dynamically loaded by SQLAlchemy)
+    # PostgreSQL drivers
+    psycopg2_req = PythonRequirementTarget(
+        {
+            "requirements": ["psycopg2-binary"],
+            "resolve": resolve,
+        },
+        address=generator.address.create_generated("psycopg2_dep"),
+    )
+
     asyncpg_req = PythonRequirementTarget(
         {
             "requirements": ["asyncpg"],
             "resolve": resolve,
         },
         address=generator.address.create_generated("asyncpg_dep"),
+    )
+
+    # MySQL/MariaDB drivers
+    pymysql_req = PythonRequirementTarget(
+        {
+            "requirements": ["PyMySQL"],
+            "resolve": resolve,
+        },
+        address=generator.address.create_generated("pymysql_dep"),
+    )
+
+    aiomysql_req = PythonRequirementTarget(
+        {
+            "requirements": ["aiomysql"],
+            "resolve": resolve,
+        },
+        address=generator.address.create_generated("aiomysql_dep"),
+    )
+
+    # SQLite drivers
+    aiosqlite_req = PythonRequirementTarget(
+        {
+            "requirements": ["aiosqlite"],
+            "resolve": resolve,
+        },
+        address=generator.address.create_generated("aiosqlite_dep"),
+    )
+
+    # SQL Server drivers
+    pyodbc_req = PythonRequirementTarget(
+        {
+            "requirements": ["pyodbc"],
+            "resolve": resolve,
+        },
+        address=generator.address.create_generated("pyodbc_dep"),
+    )
+
+    aioodbc_req = PythonRequirementTarget(
+        {
+            "requirements": ["aioodbc"],
+            "resolve": resolve,
+        },
+        address=generator.address.create_generated("aioodbc_dep"),
     )
 
     # Generate python_source for env.py
@@ -89,79 +224,87 @@ async def generate_alembic_targets(
         address=generator.address.create_generated("resources2"),
     )
 
-    # Common dependencies for all pex_binary targets
+    # Common dependencies for pex_binary target
     common_deps = [
         f":{generator.address.target_name}#env.py",
         f":{generator.address.target_name}#resources",
         f":{generator.address.target_name}#resources2",
     ]
 
-    # Dependencies for binaries that use gusi CLI wrappers
-    gusi_cli_deps = common_deps + ["3rdparty/pants/g-usi/src/python/gusi/pants/backend/alembic:cli_wrappers"]
-
-    # Environment variable with alembic.ini location (relative to project root)
-    alembic_ini_path = f"{generator.address.spec_path}/alembic.ini"
-    cli_env = {"ALEMBIC_INI_RELPATH": alembic_ini_path}
-
-    # Generate pex_binary targets
-    # Generic Alembic CLI (no defaults)
+    # Generate base Alembic CLI binary
     alembic_bin = PexBinary(
         {
             "entry_point": "alembic.config:main",
             "dependencies": common_deps,
             "resolve": resolve,
             "restartable": True,
-            "env": cli_env,
         },
         address=generator.address.create_generated("alembic"),
     )
 
-    # Convenience binaries with sensible defaults
-    generate_bin = PexBinary(
+    # Generate virtual commands.py target (triggers GeneratedSources)
+    commands_src = AlembicCommandsPyTarget(
         {
-            "entry_point": "gusi.pants.backend.alembic.cli_wrappers:migrate_main",
-            "dependencies": gusi_cli_deps,
+            "dependencies": deps,
             "resolve": resolve,
-            "restartable": True,
-            "env": cli_env,
         },
-        address=generator.address.create_generated("generate"),
+        address=generator.address.create_generated("commands"),
     )
 
-    upgrade_bin = PexBinary(
-        {
-            "entry_point": "gusi.pants.backend.alembic.cli_wrappers:upgrade_main",
-            "dependencies": gusi_cli_deps,
-            "resolve": resolve,
-            "restartable": True,
-            "env": cli_env,
-        },
-        address=generator.address.create_generated("upgrade"),
+    # Get the source root for this target
+    source_root = await Get(
+        SourceRoot,
+        SourceRootRequest(PurePath(generator.address.spec_path)),
     )
 
-    downgrade_bin = PexBinary(
-        {
-            "entry_point": "gusi.pants.backend.alembic.cli_wrappers:downgrade_main",
-            "dependencies": gusi_cli_deps,
-            "resolve": resolve,
-            "restartable": True,
-            "env": cli_env,
-        },
-        address=generator.address.create_generated("downgrade"),
-    )
+    # Compute module path relative to source root
+    # e.g., spec_path="src/python/nslv/mig/poacher", source_root.path="src/python"
+    #       -> module_path="nslv/mig/poacher" -> "nslv.mig.poacher.commands"
+    spec_path = generator.address.spec_path
+    if source_root.path:
+        # Remove source root prefix
+        module_path = spec_path[len(source_root.path):].lstrip("/")
+    else:
+        module_path = spec_path
+
+    module_name = module_path.replace("/", ".") + ".commands"
+
+    # Generate convenience command binaries
+    convenience_binaries = []
+    commands = ["generate", "upgrade", "downgrade"]
+
+    for command_name in commands:
+        cmd_bin = PexBinary(
+            {
+                "entry_point": f"{module_name}:{command_name}",
+                "dependencies": [
+                    f":{generator.address.target_name}#commands",
+                    *common_deps,
+                ],
+                "resolve": resolve,
+                "restartable": True,
+            },
+            address=generator.address.create_generated(command_name),
+        )
+        convenience_binaries.append(cmd_bin)
 
     return GeneratedTargets(
         generator,
         [
             alembic_req,
+            psycopg2_req,
             asyncpg_req,
+            pymysql_req,
+            aiomysql_req,
+            aiosqlite_req,
+            pyodbc_req,
+            aioodbc_req,
             migration_src,
             resources,
             resources2,
             alembic_bin,
-            generate_bin,
-            upgrade_bin,
-            downgrade_bin,
+            commands_src,
+            *convenience_binaries,
         ],
     )
 

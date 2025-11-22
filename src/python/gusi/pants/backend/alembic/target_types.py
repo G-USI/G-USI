@@ -3,61 +3,86 @@
 from pants.backend.python.target_types import PythonResolveField, PythonRequirementTarget
 from pants.engine.target import (
     COMMON_TARGET_FIELDS,
+    Dependencies,
+    Target,
     TargetGenerator,
 )
 
+from gusi.pants.backend.alembic.codegen import AlembicCommandsPySourceField
+
+
+class AlembicCommandsPyTarget(Target):
+    """Target that generates commands.py for Alembic convenience binaries.
+
+    This is an internal target created by alembic_migrations(). It triggers
+    virtual generation of commands.py via GeneratedSources.
+    """
+
+    alias = "_alembic_commands_py"
+    core_fields = (
+        *COMMON_TARGET_FIELDS,
+        Dependencies,
+        AlembicCommandsPySourceField,
+        PythonResolveField,
+    )
+
 
 class AlembicMigrationsTarget(TargetGenerator):
-    """Generates Alembic migration infrastructure targets.
+    """Generates Alembic migration infrastructure targets with automatic boilerplate generation.
 
-    Zero-config database migrations with automatic dependency inference.
+    Zero-config database migrations - just create BUILD file, everything else auto-generates.
 
     ## Quick Start
 
-    Create a BUILD file in your migrations directory:
-
+    1. Create BUILD file:
         # src/python/myapp/migrations/BUILD
         alembic_migrations()
 
-    ## Required Files
+    2. Trigger generation (any pants command works):
+        pants list src/python/myapp/migrations::
 
-    You need 4 minimal files in your migrations directory:
+    3. Files auto-generated:
+        ✓ alembic.ini - Configuration with script_location
+        ✓ env.py - Migration environment with async/sync driver conversion
+        ✓ script.py.mako - Migration template
+        ✓ versions/ - Empty directory for migrations
 
-    1. BUILD - Just `alembic_migrations()`
-    2. alembic.ini - Config with `[alembic]` section and `script_location = %(here)s`
-    3. env.py - Import your SQLAlchemy Base, configure migrations
-    4. script.py.mako - Template for generated migration files
-    5. versions/ - Empty directory (migrations go here)
+    4. Customize env.py to import your models:
+        from myapp.models import Base
+        target_metadata = Base.metadata
 
     ## Usage
 
     Generate a migration:
-        pants run '//src/python/myapp/migrations#generate' -- \\
+        pants run '//src/python/myapp/migrations#alembic' -- \\
+            -c src/python/myapp/migrations/alembic.ini \\
             revision --autogenerate -m "add_user_table"
 
     Apply migrations:
-        pants run '//src/python/myapp/migrations#upgrade' -- upgrade head
+        pants run '//src/python/myapp/migrations#alembic' -- \\
+            -c src/python/myapp/migrations/alembic.ini upgrade head
 
     Rollback:
-        pants run '//src/python/myapp/migrations#downgrade' -- downgrade -1
+        pants run '//src/python/myapp/migrations#alembic' -- \\
+            -c src/python/myapp/migrations/alembic.ini downgrade -1
 
     ## Generated Targets
 
-    - #generate - Generate new migrations (auto-detects alembic.ini)
-    - #upgrade - Apply migrations to database
-    - #downgrade - Rollback migrations
-    - #alembic - Raw Alembic CLI for advanced operations
-    - #alembic_dep, #asyncpg_dep - Dependency targets
-    - #env.py - Python source target
-    - #resources, #resources2 - Config file resources
+    - #alembic - Alembic CLI with all database drivers
+    - #alembic_dep - Alembic package dependency
+    - #env.py - Migration environment file
+    - #resources - alembic.ini configuration
+    - #resources2 - script.py.mako template
+    - Database drivers: #psycopg2_dep, #asyncpg_dep, #pymysql_dep, #aiomysql_dep,
+      #aiosqlite_dep, #pyodbc_dep, #aioodbc_dep
 
     ## Key Features
 
-    - Zero-config BUILD files - literally just `alembic_migrations()`
-    - Automatic dependency inference - import models in env.py, Pants handles the rest
-    - Auto-detects alembic.ini - no need to pass --config flag
-    - Clean env.py - no sys.path manipulation needed
-    - Works with any project structure - as long as Pants can see your Python files
+    - Automatic boilerplate generation - no manual file creation
+    - Multi-database support - PostgreSQL, MySQL, SQLite, SQL Server drivers
+    - Async/sync driver conversion - postgresql+asyncpg:// → postgresql://
+    - Automatic dependency inference - import models, Pants handles the rest
+    - Zero configuration - just `alembic_migrations()`
 
     ## Parameters
 
@@ -69,15 +94,15 @@ class AlembicMigrationsTarget(TargetGenerator):
         *COMMON_TARGET_FIELDS,
         PythonResolveField,
     )
-    help = """Generates Alembic migration infrastructure targets.
+    help = """Generates Alembic migration infrastructure with automatic boilerplate generation.
 
-Zero-config database migrations with automatic dependency inference.
+Zero-config database migrations - just create BUILD file, everything else auto-generates!
 
 Setup (copy-paste ready):
 
 1. Create directory:
    ```bash
-   mkdir -p src/python/myapp/migrations/versions
+   mkdir -p src/python/myapp/migrations
    ```
 
 2. BUILD file (src/python/myapp/migrations/BUILD):
@@ -85,99 +110,56 @@ Setup (copy-paste ready):
    alembic_migrations()
    ```
 
-3. alembic.ini (src/python/myapp/migrations/alembic.ini):
-   ```ini
-   [alembic]
-   script_location = %(here)s
+3. Trigger boilerplate generation:
+   ```bash
+   pants list src/python/myapp/migrations::
    ```
 
-4. env.py (src/python/myapp/migrations/env.py):
+4. Files automatically generated:
+   ✓ alembic.ini - Configuration with script_location
+   ✓ env.py - Migration environment with async/sync driver conversion
+   ✓ script.py.mako - Migration template
+   ✓ versions/ - Empty directory for migrations
+
+5. Customize generated env.py to import your models:
    ```python
-   from alembic import context
-   from sqlalchemy import engine_from_config, pool
-   import os
-
-   from myapp.models import Base  # Replace with your models path
-
-   config = context.config
+   # Update these lines in the generated env.py
+   from myapp.models import Base
    target_metadata = Base.metadata
-
-   def get_url():
-       return os.getenv("DATABASE_URL", "postgresql://localhost/mydb")
-
-   def run_migrations_offline():
-       context.configure(url=get_url(), target_metadata=target_metadata, literal_binds=True)
-       with context.begin_transaction():
-           context.run_migrations()
-
-   def run_migrations_online():
-       connectable = engine_from_config(
-           {"sqlalchemy.url": get_url()},
-           prefix="sqlalchemy.",
-           poolclass=pool.NullPool,
-       )
-       with connectable.connect() as connection:
-           context.configure(connection=connection, target_metadata=target_metadata)
-           with context.begin_transaction():
-               context.run_migrations()
-
-   if context.is_offline_mode():
-       run_migrations_offline()
-   else:
-       run_migrations_online()
-   ```
-
-5. script.py.mako (src/python/myapp/migrations/script.py.mako):
-   ```mako
-   \"\"\"${message}
-
-   Revision ID: ${up_revision}
-   Revises: ${down_revision | comma,n}
-   Create Date: ${create_date}
-   \"\"\"
-   from alembic import op
-   import sqlalchemy as sa
-   ${imports if imports else ""}
-
-   revision = ${repr(up_revision)}
-   down_revision = ${repr(down_revision)}
-   branch_labels = ${repr(branch_labels)}
-   depends_on = ${repr(depends_on)}
-
-   def upgrade():
-       ${upgrades if upgrades else "pass"}
-
-   def downgrade():
-       ${downgrades if downgrades else "pass"}
    ```
 
 Usage Commands:
   Generate migration:
     ```bash
-    pants run '//src/python/myapp/migrations#generate' -- revision --autogenerate -m "add_user_table"
+    pants run '//src/python/myapp/migrations#alembic' -- \\
+        -c src/python/myapp/migrations/alembic.ini \\
+        revision --autogenerate -m "add_user_table"
     ```
 
   Apply migrations:
     ```bash
-    pants run '//src/python/myapp/migrations#upgrade' -- upgrade head
+    pants run '//src/python/myapp/migrations#alembic' -- \\
+        -c src/python/myapp/migrations/alembic.ini upgrade head
     ```
 
   Rollback:
     ```bash
-    pants run '//src/python/myapp/migrations#downgrade' -- downgrade -1
+    pants run '//src/python/myapp/migrations#alembic' -- \\
+        -c src/python/myapp/migrations/alembic.ini downgrade -1
     ```
 
 Generated Targets:
-  #generate   - Generate migrations (auto-detects alembic.ini)
-  #upgrade    - Apply migrations to database
-  #downgrade  - Rollback migrations
-  #alembic    - Raw Alembic CLI
+  #alembic    - Alembic CLI with all database drivers
+  #alembic_dep, #env.py, #resources, #resources2 - Component targets
+  Database drivers: #psycopg2_dep, #asyncpg_dep, #pymysql_dep, #aiomysql_dep,
+                    #aiosqlite_dep, #pyodbc_dep, #aioodbc_dep
 
 Key Features:
-  ✓ Zero-config - Just alembic_migrations()
+  ✓ Automatic boilerplate generation - no manual file creation
+  ✓ Multi-database support - PostgreSQL, MySQL, SQLite, SQL Server
+  ✓ Async/sync driver conversion - postgresql+asyncpg:// → postgresql://
   ✓ Auto dependency inference from imports
-  ✓ Auto-detects alembic.ini
-  ✓ No sys.path hacks needed
+  ✓ Zero configuration - just alembic_migrations()
 
 Parameters:
   resolve (optional) - Python resolver (default: python-default)
