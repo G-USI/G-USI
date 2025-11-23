@@ -3,12 +3,16 @@
 from pants.backend.python.target_types import PythonResolveField, PythonRequirementTarget
 from pants.engine.target import (
     COMMON_TARGET_FIELDS,
+    BoolField,
     Dependencies,
     Target,
     TargetGenerator,
 )
 
-from gusi.pants.backend.alembic.codegen import AlembicCommandsPySourceField
+from gusi.pants.backend.alembic.codegen import (
+    AlembicCommandsPySourceField,
+    AlembicWrapperPySourceField,
+)
 
 
 class AlembicCommandsPyTarget(Target):
@@ -25,6 +29,34 @@ class AlembicCommandsPyTarget(Target):
         AlembicCommandsPySourceField,
         PythonResolveField,
     )
+
+
+class AlembicWrapperPyTarget(Target):
+    """Target that generates alembic_wrapper.py for the Alembic CLI.
+
+    This is an internal target created by alembic_migrations(). It triggers
+    virtual generation of alembic_wrapper.py via GeneratedSources.
+    """
+
+    alias = "_alembic_wrapper_py"
+    core_fields = (
+        *COMMON_TARGET_FIELDS,
+        Dependencies,
+        AlembicWrapperPySourceField,
+        PythonResolveField,
+    )
+
+
+class DisableBoilerplateGenerationField(BoolField):
+    """Disable automatic boilerplate file generation.
+
+    If True, alembic.ini, env.py, script.py.mako, and versions/ will NOT be
+    auto-generated. You must create these files manually.
+
+    Default: False (auto-generation enabled)
+    """
+    alias = "disable_boilerplate_generation"
+    default = False
 
 
 class AlembicMigrationsTarget(TargetGenerator):
@@ -87,12 +119,16 @@ class AlembicMigrationsTarget(TargetGenerator):
     ## Parameters
 
     - resolve (optional) - Python resolver to use. Defaults to `python-default`.
+    - disable_boilerplate_generation (optional) - Disable automatic boilerplate file generation.
+      If True, you must create alembic.ini, env.py, script.py.mako, and versions/ manually.
+      Defaults to False (auto-generation enabled).
     """
 
     alias = "alembic_migrations"
     core_fields = (
         *COMMON_TARGET_FIELDS,
         PythonResolveField,
+        DisableBoilerplateGenerationField,
     )
     help = """Generates Alembic migration infrastructure with automatic boilerplate generation.
 
@@ -163,6 +199,8 @@ Key Features:
 
 Parameters:
   resolve (optional) - Python resolver (default: python-default)
+  disable_boilerplate_generation (optional) - Disable automatic boilerplate file generation
+                                               (default: False)
 """
 
     # TargetGenerator required attributes

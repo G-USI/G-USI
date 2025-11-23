@@ -289,31 +289,52 @@ The plugin automatically converts async drivers to sync for Alembic compatibilit
 The `alembic_migrations()` macro automatically generates these targets:
 
 - **`#alembic`** - Alembic CLI with all database drivers included
+- **`#generate`** - Convenience command for `alembic revision --autogenerate`
+- **`#upgrade`** - Convenience command for `alembic upgrade head`
+- **`#downgrade`** - Convenience command for `alembic downgrade -1`
 - **`#alembic_dep`** - Alembic package dependency
 - **`#env.py`** - Migration environment file
 - **`#resources`** - alembic.ini configuration
 - **`#resources2`** - script.py.mako template
-- **Database driver dependencies** - psycopg2, asyncpg, PyMySQL, aiomysql, aiosqlite, pyodbc, aioodbc
+- **`#commands`** - Virtual commands.py file (generated dynamically)
+- **Database driver dependencies** - #psycopg2_dep, #asyncpg_dep, #pymysql_dep, #aiomysql_dep, #aiosqlite_dep, #pyodbc_dep, #aioodbc_dep
 
-#### Usage Commands
+#### Convenience Commands
+
+For common operations, use the convenience command shortcuts:
 
 ```bash
-# Generate a new migration
+# Generate a new migration (autogenerate)
+pants run '//src/python/myapp/migrations#generate' -- -m "add_user_table"
+
+# Apply all pending migrations
+pants run '//src/python/myapp/migrations#upgrade'
+
+# Rollback the last migration
+pants run '//src/python/myapp/migrations#downgrade'
+```
+
+These commands automatically handle the config path and common options.
+
+#### Advanced Usage (Full Alembic CLI)
+
+The `#alembic` target automatically detects the config path, so `-c` is optional:
+
+```bash
+# Generate a new migration (config path auto-detected)
 pants run '//src/python/myapp/migrations#alembic' -- \
-    -c src/python/myapp/migrations/alembic.ini \
     revision --autogenerate -m "add_user_table"
 
 # Apply all pending migrations
-pants run '//src/python/myapp/migrations#alembic' -- \
-    -c src/python/myapp/migrations/alembic.ini \
-    upgrade head
+pants run '//src/python/myapp/migrations#alembic' -- upgrade head
 
 # Rollback the last migration
-pants run '//src/python/myapp/migrations#alembic' -- \
-    -c src/python/myapp/migrations/alembic.ini \
-    downgrade -1
+pants run '//src/python/myapp/migrations#alembic' -- downgrade -1
 
 # Check current migration version
+pants run '//src/python/myapp/migrations#alembic' -- current
+
+# You can still specify -c explicitly if needed
 pants run '//src/python/myapp/migrations#alembic' -- \
     -c src/python/myapp/migrations/alembic.ini \
     current

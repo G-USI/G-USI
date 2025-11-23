@@ -22,6 +22,8 @@ from pants.source.source_root import SourceRoot, SourceRootRequest
 from gusi.pants.backend.alembic.target_types import (
     AlembicCommandsPyTarget,
     AlembicMigrationsTarget,
+    AlembicWrapperPyTarget,
+    DisableBoilerplateGenerationField,
 )
 from gusi.pants.backend.alembic.templates import (
     ALEMBIC_INI_TEMPLATE,
@@ -68,16 +70,19 @@ def _ensure_alembic_boilerplate(spec_path: str) -> None:
         spec_path: Directory path where the alembic_migrations target is defined
                    (relative to buildroot, e.g., "src/python/myapp/migrations")
     """
+    # Check if we should skip auto-generation (e.g., during tailor --check)
+    # This env var can be set to prevent auto-generation
+    if os.getenv("PANTS_ALEMBIC_NO_AUTO_GENERATE"):
+        return
+
     # Resolve paths relative to buildroot, not cwd
     buildroot = _get_buildroot()
     migration_dir = buildroot / spec_path
-    config_path = f"{spec_path}/alembic.ini"
 
     # Generate alembic.ini if missing
     alembic_ini_path = migration_dir / "alembic.ini"
     if not alembic_ini_path.exists():
-        content = ALEMBIC_INI_TEMPLATE.format(script_location=spec_path)
-        alembic_ini_path.write_text(content)
+        alembic_ini_path.write_text(ALEMBIC_INI_TEMPLATE)
         print(f"✓ Generated {alembic_ini_path}")
 
     # Generate env.py if missing
@@ -106,11 +111,13 @@ async def generate_alembic_targets(
     """Generate all Alembic-related targets from an alembic_migrations target."""
     generator = request.generator
 
-    # Generate boilerplate files if missing
-    _ensure_alembic_boilerplate(generator.address.spec_path)
-
     # Get field values
     resolve = generator[PythonResolveField].value
+    disable_generation = generator[DisableBoilerplateGenerationField].value
+
+    # Generate boilerplate files if missing (unless disabled)
+    if not disable_generation:
+        _ensure_alembic_boilerplate(generator.address.spec_path)
 
     # Build dependencies for the env.py target
     # Pants automatically infers Python imports from env.py
@@ -231,15 +238,13 @@ async def generate_alembic_targets(
         f":{generator.address.target_name}#resources2",
     ]
 
-    # Generate base Alembic CLI binary
-    alembic_bin = PexBinary(
+    # Generate virtual alembic_wrapper.py target (triggers GeneratedSources)
+    wrapper_src = AlembicWrapperPyTarget(
         {
-            "entry_point": "alembic.config:main",
-            "dependencies": common_deps,
+            "dependencies": deps,
             "resolve": resolve,
-            "restartable": True,
         },
-        address=generator.address.create_generated("alembic"),
+        address=generator.address.create_generated("alembic_wrapper"),
     )
 
     # Generate virtual commands.py target (triggers GeneratedSources)
@@ -267,7 +272,23 @@ async def generate_alembic_targets(
     else:
         module_path = spec_path
 
-    module_name = module_path.replace("/", ".") + ".commands"
+    module_base = module_path.replace("/", ".")
+    commands_module = f"{module_base}.commands"
+    wrapper_module = f"{module_base}.alembic_wrapper"
+
+    # Generate base Alembic CLI binary with wrapper
+    alembic_bin = PexBinary(
+        {
+            "entry_point": f"{wrapper_module}:main",
+            "dependencies": [
+                f":{generator.address.target_name}#alembic_wrapper",
+                *common_deps,
+            ],
+            "resolve": resolve,
+            "restartable": True,
+        },
+        address=generator.address.create_generated("alembic"),
+    )
 
     # Generate convenience command binaries
     convenience_binaries = []
@@ -276,7 +297,7 @@ async def generate_alembic_targets(
     for command_name in commands:
         cmd_bin = PexBinary(
             {
-                "entry_point": f"{module_name}:{command_name}",
+                "entry_point": f"{commands_module}:{command_name}",
                 "dependencies": [
                     f":{generator.address.target_name}#commands",
                     *common_deps,
@@ -303,6 +324,7 @@ async def generate_alembic_targets(
             resources,
             resources2,
             alembic_bin,
+            wrapper_src,
             commands_src,
             *convenience_binaries,
         ],

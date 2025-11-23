@@ -5,10 +5,14 @@ from pants.engine.target import GenerateSourcesRequest
 from pants.engine.unions import UnionRule
 
 from gusi.pants.backend.alembic import codegen, tailor, target_generator
-from gusi.pants.backend.alembic.codegen import GenerateAlembicCommandsPyRequest
+from gusi.pants.backend.alembic.codegen import (
+    GenerateAlembicCommandsPyRequest,
+    GenerateAlembicWrapperPyRequest,
+)
 from gusi.pants.backend.alembic.target_types import (
     AlembicCommandsPyTarget,
     AlembicMigrationsTarget,
+    AlembicWrapperPyTarget,
 )
 
 
@@ -17,6 +21,7 @@ def target_types():
     return [
         AlembicMigrationsTarget,
         AlembicCommandsPyTarget,
+        AlembicWrapperPyTarget,
     ]
 
 
@@ -27,6 +32,7 @@ def rules():
         *target_generator.rules(),
         *tailor.rules(),
         UnionRule(GenerateSourcesRequest, GenerateAlembicCommandsPyRequest),
+        UnionRule(GenerateSourcesRequest, GenerateAlembicWrapperPyRequest),
     ]
 
 
