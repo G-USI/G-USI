@@ -7,6 +7,7 @@ backend_packages = [
   "pants.backend.experimental.python.typecheck.pyright",
   "pants.backend.plugin_development",
   "gusi.pants.backend.alembic",
+  "gusi.pants.backend.ray",
 ]
 print_stacktrace = true
 
