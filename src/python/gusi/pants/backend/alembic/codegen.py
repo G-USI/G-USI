@@ -11,7 +11,7 @@ from pants.engine.target import (
     SourcesField,
 )
 
-from gusi.pants.backend.alembic.templates import (
+from gusi.pants.backend.alembic.templates import (  # type: ignore[import-untyped]
     get_alembic_wrapper_template,
     get_commands_template,
 )

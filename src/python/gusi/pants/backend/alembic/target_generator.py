@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePath
 
 from pants.backend.python.target_types import (
+    InterpreterConstraintsField,
     PexBinary,
     PythonRequirementTarget,
     PythonResolveField,
@@ -25,7 +26,7 @@ from gusi.pants.backend.alembic.target_types import (
     AlembicWrapperPyTarget,
     DisableBoilerplateGenerationField,
 )
-from gusi.pants.backend.alembic.templates import (
+from gusi.pants.backend.alembic.templates import (  # type: ignore[import-untyped]
     ALEMBIC_INI_TEMPLATE,
     ENV_PY_TEMPLATE,
     SCRIPT_MAKO_TEMPLATE,
@@ -114,6 +115,7 @@ async def generate_alembic_targets(
     # Get field values
     resolve = generator[PythonResolveField].value
     disable_generation = generator[DisableBoilerplateGenerationField].value
+    interpreter_constraints = generator[InterpreterConstraintsField].value
 
     # Generate boilerplate files if missing (unless disabled)
     if not disable_generation:
@@ -137,82 +139,53 @@ async def generate_alembic_targets(
         f":{generator.address.target_name}#aioodbc_dep",
     ]
 
-    # Generate python_requirement for Alembic
+    req_fields = {"resolve": resolve}
+    if interpreter_constraints:
+        req_fields["interpreter_constraints"] = interpreter_constraints
+
     alembic_req = PythonRequirementTarget(
-        {
-            "requirements": ["alembic>=1.13.0"],
-            "resolve": resolve,
-        },
+        {"requirements": ["alembic>=1.13.0"], **req_fields},
         address=generator.address.create_generated("alembic_dep"),
     )
 
-    # PostgreSQL drivers
     psycopg2_req = PythonRequirementTarget(
-        {
-            "requirements": ["psycopg2-binary"],
-            "resolve": resolve,
-        },
+        {"requirements": ["psycopg2-binary"], **req_fields},
         address=generator.address.create_generated("psycopg2_dep"),
     )
 
     asyncpg_req = PythonRequirementTarget(
-        {
-            "requirements": ["asyncpg"],
-            "resolve": resolve,
-        },
+        {"requirements": ["asyncpg"], **req_fields},
         address=generator.address.create_generated("asyncpg_dep"),
     )
 
-    # MySQL/MariaDB drivers
     pymysql_req = PythonRequirementTarget(
-        {
-            "requirements": ["PyMySQL"],
-            "resolve": resolve,
-        },
+        {"requirements": ["PyMySQL"], **req_fields},
         address=generator.address.create_generated("pymysql_dep"),
     )
 
     aiomysql_req = PythonRequirementTarget(
-        {
-            "requirements": ["aiomysql"],
-            "resolve": resolve,
-        },
+        {"requirements": ["aiomysql"], **req_fields},
         address=generator.address.create_generated("aiomysql_dep"),
     )
 
-    # SQLite drivers
     aiosqlite_req = PythonRequirementTarget(
-        {
-            "requirements": ["aiosqlite"],
-            "resolve": resolve,
-        },
+        {"requirements": ["aiosqlite"], **req_fields},
         address=generator.address.create_generated("aiosqlite_dep"),
     )
 
-    # SQL Server drivers
     pyodbc_req = PythonRequirementTarget(
-        {
-            "requirements": ["pyodbc"],
-            "resolve": resolve,
-        },
+        {"requirements": ["pyodbc"], **req_fields},
         address=generator.address.create_generated("pyodbc_dep"),
     )
 
     aioodbc_req = PythonRequirementTarget(
-        {
-            "requirements": ["aioodbc"],
-            "resolve": resolve,
-        },
+        {"requirements": ["aioodbc"], **req_fields},
         address=generator.address.create_generated("aioodbc_dep"),
     )
 
     # Generate python_source for env.py
     migration_src = PythonSourceTarget(
-        {
-            "source": "env.py",
-            "dependencies": deps,
-            "resolve": resolve,
-        },
+        {"source": "env.py", "dependencies": deps, **req_fields},
         address=generator.address.create_generated("env.py"),
     )
 
@@ -240,11 +213,13 @@ async def generate_alembic_targets(
 
     # Generate virtual alembic_wrapper.py target (triggers GeneratedSources)
     wrapper_src = AlembicWrapperPyTarget(
-        {
-            "dependencies": deps,
-            "resolve": resolve,
-        },
+        {"dependencies": deps, **req_fields},
         address=generator.address.create_generated("alembic_wrapper"),
+    )
+
+    commands_src = AlembicCommandsPyTarget(
+        {"dependencies": deps, **req_fields},
+        address=generator.address.create_generated("commands"),
     )
 
     # Generate virtual commands.py target (triggers GeneratedSources)
@@ -284,13 +259,12 @@ async def generate_alembic_targets(
                 f":{generator.address.target_name}#alembic_wrapper",
                 *common_deps,
             ],
-            "resolve": resolve,
             "restartable": True,
+            **req_fields,
         },
         address=generator.address.create_generated("alembic"),
     )
 
-    # Generate convenience command binaries
     convenience_binaries = []
     commands = ["generate", "upgrade", "downgrade"]
 
@@ -302,8 +276,8 @@ async def generate_alembic_targets(
                     f":{generator.address.target_name}#commands",
                     *common_deps,
                 ],
-                "resolve": resolve,
                 "restartable": True,
+                **req_fields,
             },
             address=generator.address.create_generated(command_name),
         )

@@ -1,13 +1,20 @@
 python_sources(
     name="pants_plugin_sources",
-    sources=["register.py", "tailor.py", "target_generator.py", "target_types.py", "__init__.py"],
-    # No resolve specified - Pants imports are provided at runtime when the plugin loads
+    sources=["register.py", "tailor.py", "target_generator.py", "target_types.py", "codegen.py", "__init__.py"],
+    interpreter_constraints=["==3.11.*"],
+    dependencies=[":templates"],
 )
 
 python_sources(
     name="cli_wrappers",
     sources=["cli_wrappers.py"],
-    # No resolve specified - will use the resolve of the target that depends on it
+    interpreter_constraints=["==3.11.*"],
+)
+
+python_sources(
+    name="templates",
+    sources=["__init__.py"],
+    interpreter_constraints=["==3.11.*"],
 )
 
 python_distribution(

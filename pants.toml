@@ -7,7 +7,6 @@ backend_packages = [
   "pants.backend.experimental.python.typecheck.pyright",
   "pants.backend.plugin_development",
   "gusi.pants.backend.alembic",
-  "gusi.pants.backend.ray",
 ]
 print_stacktrace = true
 
@@ -15,7 +14,7 @@ print_stacktrace = true
 enable_resolves = true
 enable_lockfile_targets = true
 default_resolve = "gusi-pants-plugins"
-interpreter_constraints = [">=3.10,<3.15"]
+interpreter_constraints = ["==3.11.*"]
 
 [python.resolves_to_interpreter_constraints]
 gusi-pants-plugins = ["==3.11.*"]
