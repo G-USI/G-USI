@@ -1,6 +1,10 @@
 """Target types for Alembic migrations."""
 
-from pants.backend.python.target_types import PythonResolveField, PythonRequirementTarget
+from pants.backend.python.target_types import (
+    InterpreterConstraintsField,
+    PythonResolveField,
+    PythonRequirementTarget,
+)
 from pants.engine.target import (
     COMMON_TARGET_FIELDS,
     BoolField,
@@ -55,6 +59,7 @@ class DisableBoilerplateGenerationField(BoolField):
 
     Default: False (auto-generation enabled)
     """
+
     alias = "disable_boilerplate_generation"
     default = False
 
@@ -127,6 +132,8 @@ class AlembicMigrationsTarget(TargetGenerator):
     alias = "alembic_migrations"
     core_fields = (
         *COMMON_TARGET_FIELDS,
+        Dependencies,
+        InterpreterConstraintsField,
         PythonResolveField,
         DisableBoilerplateGenerationField,
     )
@@ -207,6 +214,6 @@ Parameters:
     # Since we don't generate from sources like typical generators,
     # we set these to empty/minimal values
     copied_fields = ()
-    moved_fields = (PythonResolveField,)
+    moved_fields = (PythonResolveField, InterpreterConstraintsField)
     # We generate multiple target types, but this field requires one concrete type
     generated_target_cls = PythonRequirementTarget
