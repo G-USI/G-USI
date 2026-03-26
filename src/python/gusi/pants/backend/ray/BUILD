@@ -1,0 +1,19 @@
+python_sources(
+    name="ray_plugin_sources",
+    sources=[
+        "__init__.py",
+        "register.py",
+        "target_generator.py",
+        "target_types.py",
+        "rules.py",
+    ],
+    interpreter_constraints=["==3.11.*"],
+)
+
+python_sources(
+    name="goal",
+    sources=["goal.py"],
+    interpreter_constraints=["==3.11.*"],
+    skip_pyright=True,
+    dependencies=[":ray_plugin_sources"],
+)
