@@ -243,7 +243,7 @@ async def generate_alembic_targets(
     spec_path = generator.address.spec_path
     if source_root.path:
         # Remove source root prefix
-        module_path = spec_path[len(source_root.path):].lstrip("/")
+        module_path = spec_path[len(source_root.path) :].lstrip("/")
     else:
         module_path = spec_path
 

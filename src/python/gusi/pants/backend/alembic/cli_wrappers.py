@@ -38,10 +38,10 @@ def _setup_source_roots():
     # Method 2: Auto-detect common source root patterns
     # Try in order of specificity
     patterns = [
-        "src/python",     # Standard Pants Python layout
-        "src/py",         # Alternative
-        "src",            # Generic source directory
-        "lib",            # Some projects use lib/
+        "src/python",  # Standard Pants Python layout
+        "src/py",  # Alternative
+        "src",  # Generic source directory
+        "lib",  # Some projects use lib/
     ]
 
     for pattern in patterns:
@@ -68,7 +68,10 @@ def _find_alembic_ini():
         if ini_path.exists():
             return ini_relpath
         # If env var is set but file doesn't exist, log and fall through to search
-        print(f"Warning: ALEMBIC_INI_RELPATH={ini_relpath} set but file not found, falling back to search", file=sys.stderr)
+        print(
+            f"Warning: ALEMBIC_INI_RELPATH={ini_relpath} set but file not found, falling back to search",
+            file=sys.stderr,
+        )
 
     # Fallback: check if alembic.ini exists in current directory
     if (project_root / "alembic.ini").exists():
@@ -107,13 +110,26 @@ def migrate_main():
     else:
         # Find where the config path ends
         try:
-            c_idx = sys.argv.index("-c") if "-c" in sys.argv else sys.argv.index("--config")
+            c_idx = (
+                sys.argv.index("-c") if "-c" in sys.argv else sys.argv.index("--config")
+            )
             config_idx = c_idx + 2  # skip -c and the path
         except (ValueError, IndexError):
             config_idx = 1
 
     # If revision command not present, insert it
-    if not any(arg in sys.argv for arg in ["revision", "upgrade", "downgrade", "heads", "current", "history", "show"]):
+    if not any(
+        arg in sys.argv
+        for arg in [
+            "revision",
+            "upgrade",
+            "downgrade",
+            "heads",
+            "current",
+            "history",
+            "show",
+        ]
+    ):
         sys.argv.insert(config_idx, "revision")
         sys.argv.insert(config_idx + 1, "--autogenerate")
 
@@ -134,7 +150,18 @@ def upgrade_main():
     if len(sys.argv) <= 3:  # script name + -c + alembic.ini
         sys.argv.extend(["upgrade", "head"])
     # If user provided arguments but not the command, append upgrade
-    elif not any(arg in sys.argv for arg in ["revision", "upgrade", "downgrade", "heads", "current", "history", "show"]):
+    elif not any(
+        arg in sys.argv
+        for arg in [
+            "revision",
+            "upgrade",
+            "downgrade",
+            "heads",
+            "current",
+            "history",
+            "show",
+        ]
+    ):
         sys.argv.append("upgrade")
         if "head" not in sys.argv:
             sys.argv.append("head")
@@ -156,7 +183,18 @@ def downgrade_main():
     if len(sys.argv) <= 3:  # script name + -c + alembic.ini
         sys.argv.extend(["downgrade", "-1"])
     # If user provided arguments but not the command, append downgrade
-    elif not any(arg in sys.argv for arg in ["revision", "upgrade", "downgrade", "heads", "current", "history", "show"]):
+    elif not any(
+        arg in sys.argv
+        for arg in [
+            "revision",
+            "upgrade",
+            "downgrade",
+            "heads",
+            "current",
+            "history",
+            "show",
+        ]
+    ):
         sys.argv.append("downgrade")
         if "-1" not in sys.argv:
             sys.argv.append("-1")

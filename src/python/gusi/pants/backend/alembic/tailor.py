@@ -70,7 +70,11 @@ async def find_putative_alembic_migrations_targets(
             # Check if this BUILD file contains alembic_migrations()
             if "alembic_migrations(" in content:
                 # Get the directory containing this BUILD file
-                dir_name = file_content.path.rsplit("/", 1)[0] if "/" in file_content.path else ""
+                dir_name = (
+                    file_content.path.rsplit("/", 1)[0]
+                    if "/" in file_content.path
+                    else ""
+                )
 
                 # Check if boilerplate files exist BEFORE target generation
                 migration_dir = buildroot / dir_name if dir_name else buildroot
@@ -90,7 +94,9 @@ async def find_putative_alembic_migrations_targets(
                 # In --check mode, this will cause tailor to fail with exit 1
                 # In normal mode, the target generator will create the files
                 if missing:
-                    print(f"⚠  Alembic boilerplate missing in {dir_name or '.'}: {', '.join(missing)}")
+                    print(
+                        f"⚠  Alembic boilerplate missing in {dir_name or '.'}: {', '.join(missing)}"
+                    )
                     print(f"   Run any pants command to auto-generate these files.")
 
                     # Create a putative target to make --check fail
@@ -119,12 +125,13 @@ async def find_putative_alembic_migrations_targets(
             continue
 
         env_py_path = f"{dir_name}/env.py" if dir_name else "env.py"
-        script_mako_path = f"{dir_name}/script.py.mako" if dir_name else "script.py.mako"
+        script_mako_path = (
+            f"{dir_name}/script.py.mako" if dir_name else "script.py.mako"
+        )
 
         # Check that env.py and script.py.mako exist
         required_files = await Get(
-            Paths,
-            PathGlobs([env_py_path, script_mako_path, path])
+            Paths, PathGlobs([env_py_path, script_mako_path, path])
         )
 
         # Only suggest if all required files are present

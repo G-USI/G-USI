@@ -59,6 +59,7 @@ class DisableBoilerplateGenerationField(BoolField):
 
     Default: False (auto-generation enabled)
     """
+
     alias = "disable_boilerplate_generation"
     default = False
 
