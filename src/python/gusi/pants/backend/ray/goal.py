@@ -226,12 +226,18 @@ async def build_ray_job_outputs(request: RayJobBuildRequest) -> RayJobBuildOutpu
         tgt.address for tgt in dep_targets if tgt.address != submit_script_addr
     )
 
+    # Expand to full transitive closure for PEX source inclusion.
+    # Without this, only direct deps are included (missing transitive sources).
+    dep_tt = await get_transitive_targets(
+        TransitiveTargetsRequest(dep_addrs), **implicitly()
+    )
+    transitive_dep_addrs = tuple(tgt.address for tgt in dep_tt.closure)
+
     # 1. Build job PEX (sources only, no 3rd-party deps shipped to cluster).
-    #    Uses dep_addrs which naturally excludes the _submit_script generated target.
     job_pex = await create_pex(
         await create_pex_from_targets(
             PexFromTargetsRequest(
-                addresses=dep_addrs,
+                addresses=transitive_dep_addrs,
                 output_filename=request.job_pex_filename,
                 internal_only=False,
                 include_source_files=True,
