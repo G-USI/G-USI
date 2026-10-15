@@ -11,23 +11,11 @@
 let
   system = pkgs.stdenv.hostPlatform.system;
   version = (builtins.fromTOML (builtins.readFile ./pants.toml)).GLOBAL.pants_version;
-  data = (import ./nix/pants/versions.nix).${version};
-  arch = data.${system} or null;
-  # Interpreter era mapping - keep in sync with mkPants in flake.nix.
-  interpreter =
-    if data.python == "python39" then pkgs.python39
-    else if data.python == "python311" then pkgs.python311
-    else if data.python == "python314" then pkgs.python314
-    else throw "devenv: unsupported interpreter era ${data.python} for pants ${version}";
-  pants =
-    if arch == null then null
-    else pkgs.callPackage ./nix/pants {
-      inherit interpreter;
-      pantsVersion = version;
-      pantsUrl = arch.url;
-      pantsHash = arch.hash;
-      deps = arch.deps;
-    };
+  # No nixpkgs-py39 input in devenv.yaml: a cp39-era pin surfaces the
+  # lib's informative throw instead of a missing-attribute error.
+  pantsLib = import ./nix/pants/lib.nix { inherit pkgs; };
+  arch = pantsLib.archOrNull { inherit version system; };
+  pants = if arch == null then null else pantsLib.mkPants { inherit version; };
 in
 {
   packages =
@@ -35,6 +23,6 @@ in
     ++ lib.optionals (pants != null) [ pants ];
 
   enterShell = lib.optionalString (pants == null) ''
-    echo "devenv: pants ${version} has no ${system} packaging (upstream wheel gap) - Pants goals are unavailable in this shell"
+    echo "devenv: pants.toml pins pants ${version}, which has no ${system} packaging (upstream wheel gap) - Pants goals are unavailable in this shell"
   '';
 }

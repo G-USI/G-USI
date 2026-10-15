@@ -3,7 +3,7 @@
 # The native engine (pants/bin/native_client) and native dependency
 # extensions are patchelf'd against Nix libraries by autoPatchelfHook.
 # Pants runs on the Nix interpreter matching the release wheel's CPython
-# tag (python39 / python311 / python314 - see pants/versions.nix).
+# tag (python39 / python311 / python314 - see nix/pants/versions.nix).
 { lib, stdenv, fetchurl, makeWrapper, autoPatchelfHook
 , patchelf, zlib, util-linux
 , interpreter

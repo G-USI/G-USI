@@ -130,8 +130,9 @@ explicitly with `pinned.mkPantsPinned { version = "..."; }`.
 
 ### Requirements & limitations
 
-- x86_64-linux and aarch64-linux (native wheels for both; CI verifies
-  both on real runners). macOS is not supported.
+- x86_64-linux and aarch64-linux (native wheels for both; CI currently
+  verifies x86_64 only - arm64 runner coverage is deferred until a
+  Codefloe arm label exists). macOS is not supported.
 - One interpreter per Pants version (the release wheel's CPython tag):
   2.21-2.24 -> python3.9 (built via the `nixpkgs-py39` input),
   2.25-2.31 -> python3.11, 2.32+ -> python3.14.
@@ -583,6 +584,9 @@ git commit -m "Update G-USI pants plugins submodule"
 If you're contributing to this repository:
 
 #### Setup
+
+Prerequisite: devenv must be installed (https://devenv.sh - one-line
+install), or use `nix develop` for the pure-flake shell.
 
 ```bash
 # Enter the development environment (devenv - https://devenv.sh)

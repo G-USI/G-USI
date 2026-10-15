@@ -10,7 +10,6 @@ on:
   push:
     branches:
       - dev
-      - "feat/**"
 
 permissions:
   contents: read
@@ -27,6 +26,12 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: DeterminateSystems/nix-installer-action@v16
+
+      - name: Assert devenv/flake nixpkgs rev equality
+        run: |
+          flake_rev=$(jq -r '.nodes.nixpkgs.locked.rev' flake.lock)
+          devenv_rev=$(jq -r '.nodes.root.inputs.nixpkgs as $id | .nodes[$id].locked.rev' devenv.lock)
+          [ "$flake_rev" = "$devenv_rev" ] || { echo "::error::nixpkgs rev drift: flake.lock=$flake_rev devenv.lock=$devenv_rev (run: set devenv.yaml url to the flake.lock rev, then devenv update)"; exit 1; }
 
       - name: Free disk space
         run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL || true
@@ -66,13 +71,25 @@ jobs:
 
       - uses: DeterminateSystems/nix-installer-action@v16
 
-      - name: Pants version pin (must print 2.29.0)
+      - name: Pants version pin (must match pants.toml)
         run: |
+          version=$(env -u LD_LIBRARY_PATH -u PYTHONPATH nix eval --raw --impure --expr '(builtins.fromTOML (builtins.readFile ./pants.toml)).GLOBAL.pants_version')
           nix develop -c pants --version | tee pants-version.txt
-          grep -qx '2.29.0' pants-version.txt
+          grep -qx "$version" pants-version.txt
 
       - name: Plugins import check (pants list must return targets)
         run: |
           out=$(nix develop -c pants list src/python/gusi::)
           echo "$out"
           [ -n "$out" ] || { echo '::error::pants list returned no targets for src/python/gusi::'; exit 1; }
+
+      - name: Sweep-exercising double goal run (cold cache)
+        # `check` (pyright) is deliberately excluded: it fails on a
+        # pre-existing reportMissingImports in
+        # src/python/gusi/pants/backend/alembic/cli_wrappers.py:6 (alembic
+        # is only in the test-resolve, not the plugin resolve), which
+        # predates this branch and is out of scope here. Re-add `check`
+        # once that import resolution is fixed.
+        run: |
+          nix develop -c pants lint ::
+          nix develop -c pants lint ::

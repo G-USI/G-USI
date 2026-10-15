@@ -20,7 +20,10 @@ CACHE="${PANTS_HOME:-$HOME/.cache/pants}/named_caches"
 # scie-pants' interpreter cache (python-build-standalone trees) is used
 # by PEX venvs created under the official launcher - patch it too.
 NCE_CACHE="$HOME/.cache/nce"
-STAMP="$CACHE/.nix-patched"
+# Keyed to this build's interpreter+rpath: any change to either (e.g.
+# the LD_LIBRARY_PATH removal) invalidates stamps from older wrappers
+# and forces one full re-sweep that re-judges every cached object.
+STAMP="$CACHE/.nix-patched-$(printf '%s' "@nixInterpreter@@nixRpath@" | sha256sum | cut -c1-12)"
 
 if [ ! -d "$CACHE" ] && [ ! -d "$NCE_CACHE" ]; then
   exit 0
@@ -58,7 +61,10 @@ patched=0
 while IFS= read -r -d '' bin; do
   interp=$(patchelf --print-interpreter "$bin" 2>/dev/null) || continue
   case "$interp" in
-    /nix/store/*) continue ;;    # already Nix-native
+    # Already Nix-native - but only while that store interpreter still
+    # exists; after a nix GC it must fall through and be re-patched,
+    # or the stamp fast path would keep a dead binary forever.
+    /nix/store/*) [ -f "$interp" ] && continue ;;
     "") continue ;;              # script or ELF without interpreter
   esac
   # Append the Nix lib dir to the existing rpath - replacing it would
@@ -93,10 +99,11 @@ done < <(
 # not safe for every ELF, so never touch healthy objects. The rpath is
 # appended (--add-rpath): replacing it here would drop the auditwheel
 # $ORIGIN/../... entries of exactly the mixed objects that pass the
-# ldd gate.
+# ldd gate. The gate must run with the caller's LD_LIBRARY_PATH
+# scrubbed, or it judges env-assisted objects healthy and skips them.
 sos=0
 while IFS= read -r -d '' so; do
-  ldd "$so" 2>/dev/null | command grep -q 'not found' || continue
+  env -u LD_LIBRARY_PATH ldd "$so" 2>/dev/null | command grep -q 'not found' || continue
   old_rpath=$(patchelf --print-rpath "$so" 2>/dev/null) || continue
   case "$old_rpath" in
     *@nixRpath@*) continue ;;    # already patched; remaining needs won't resolve here
