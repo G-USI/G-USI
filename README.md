@@ -1,8 +1,158 @@
-# pants-utils
+# g-usi
+
+A nix monorepo with two roles in one repo:
+
+1. **Pants packaging** - run the [Pants](https://www.pantsbuild.org/) build
+   system from Nix, natively on any Linux machine, NixOS included. Every
+   stable Pants release from **2.21.0 through 2.33.1** is packaged, dual-arch
+   (x86_64-linux + aarch64-linux), NixOS-native.
+2. **gusi pants plugins** - the reusable Pants backend plugins/macros
+   (`gusi.pants.backend.*`), developed in this same repo and consumed by
+   other repositories via git submodule.
+
+## Layout
+
+```
+.
+|-- flake.nix                  # Flake entry: packages, lib, pinned builders, devshells
+|-- flake.lock
+|-- nix/                       # Nix infrastructure
+|   `-- pants/                 # Pants packaging
+|       |-- default.nix        # mkPants builder
+|       |-- versions.nix       # Version registry (auto-aggregates versions/)
+|       |-- versions/          # Per-release version data (generated)
+|       |-- patch-caches.sh    # pants-patch-caches runtime sweep
+|       `-- scripts/           # generate.py, gen-versions.sh, list-versions.sh
+|-- pants.toml                 # Pants config for the plugins (pins the devshell Pants version)
+|-- 3rdparty/python/           # Lockfiles for the gusi-pants-plugins resolve
+`-- src/python/gusi/           # The pants plugins themselves
+```
+
+## Pants from Nix
+
+> URL examples use the current repo name; update on rename.
+
+Ad-hoc run of a specific packaged release (dots become underscores):
+
+```console
+$ nix run github:G-USI/G-USI#pants-2_31_0 -- --version
+2.31.0
+```
+
+A specific-version shell:
+
+```console
+$ nix shell github:G-USI/G-USI#pants-2_31_0 --command pants --version
+2.31.0
+```
+
+### Using it in your repo
+
+Add the input:
+
+```nix
+inputs.g-usi.url = "github:G-USI/G-USI";
+```
+
+devenv works the same way as with any flake input: add the input, then put
+the built package into `devenv.nix`'s `packages` list. Point
+`pinned.fromPantsToml` at your `pants.toml` to bind Pants to the version
+your repo pins - bumping `[GLOBAL].pants_version` re-resolves the package
+on the next eval. Note the file must be **tracked by git** - untracked
+files are invisible to flake source and eval fails with a missing-file
+error:
+
+```nix
+devShells.x86_64-linux.default =
+  let
+    pkgs = nixpkgs.legacyPackages.x86_64-linux;
+  in
+  pkgs.mkShell {
+    packages = [
+      (g-usi.pinned.x86_64-linux.fromPantsToml ./pants.toml)
+      pkgs.python314   # interpreters your resolves need
+      pkgs.cargo       # toolchains sandboxed processes need
+      pkgs.rustc
+    ];
+  };
+```
+
+The pinned builders build against this flake's nixpkgs, giving store paths
+identical across machines - the precondition for a shared binary cache. To
+build against **your** nixpkgs instead, use the lib builders:
+
+```nix
+packages = [ (g-usi.lib.fromPantsToml pkgs pkgs39 ./pants.toml) ];
+# or pick a version explicitly:
+packages = [ (g-usi.lib.mkPants pkgs pkgs39 { version = "2.31.0"; }) ];
+```
+
+where `pkgs39 = g-usi.inputs.nixpkgs-py39.legacyPackages.x86_64-linux`
+(needed for Pants 2.21-2.24, which ride python 3.9). If your `pants.toml`
+lives outside a git-tracked path (e.g. a bare repo without commits), pin
+explicitly with `pinned.mkPantsPinned { version = "..."; }`.
+
+### Runtime behavior
+
+- Pants boots on a Nix interpreter and executes the release wheel's
+  native engine, patchelf'd against Nix libraries at build time.
+- On launch (synchronously, before Pants starts), `pants-patch-caches`
+  rewrites generic-Linux binaries Pants downloads into its caches
+  (rustup toolchains, interpreters reused by PEX venvs): the
+  interpreter becomes the Nix glibc loader and the Nix lib dir is
+  **appended** to existing rpaths; shared objects are touched only
+  when `ldd` proves unresolvable needs. Atomic, stamp-guarded,
+  single-flight - a warm run is a no-op, so the synchronous launch
+  costs nothing once caches are patched. Disable with
+  `PANTS_NIX_AUTOPATCH=0`. Run it by hand any time with
+  `$(nix build --print-out-paths <flake>#pkg)/bin/pants-patch-caches`;
+  it reports how many binaries and shared objects it patched.
+- Expose the interpreters your resolves need via `extraPythons`
+  (`extraPythons = [ pkgs.python314 ];`).
+- **Point every downloaded-tool plugin at PATH binaries.** Any Pants
+  plugin that downloads an external tool (nodejs, terraform, helm,
+  rustup-init, ...) will otherwise fetch a generic-Linux binary that
+  cannot run on NixOS. Note the exec happens mid-run from a process
+  sandbox, so the cache sweep cannot rescue these - the binary must
+  come from the invoking shell's PATH (or the plugin must be configured
+  to skip its own download).
+  The standard pattern works per subsystem: set its version to one
+  **outside** the plugin's `known_versions` (e.g.
+  `PANTS_NODEJS_VERSION=24.14.0` - only `v24.10.0` is known for nodejs
+  in 2.31) and provide the real binary via the PATH of whatever shell
+  invokes Pants (e.g. nix `nodejs` in your devenv). Pants then searches PATH, version-tests the binary, and
+  runs it Nix-native. Expect to do this for each downloaded-tool plugin
+  your repo enables - leaving any of them on the download path is the
+  likely source of `Could not start dynamically linked executable`
+  errors on NixOS.
+- Tool venvs are cached per constraints - invoke Pants with a
+  consistent interpreter set to avoid re-materialization.
+
+### Requirements & limitations
+
+- x86_64-linux and aarch64-linux (native wheels for both; CI verifies
+  both on real runners). macOS is not supported.
+- One interpreter per Pants version (the release wheel's CPython tag):
+  2.21-2.24 -> python3.9 (built via the `nixpkgs-py39` input),
+  2.25-2.31 -> python3.11, 2.32+ -> python3.14.
+- On aarch64, releases 2.27.0-2.32.1 are not packaged: their
+  dependency `hdrhistogram` ships no aarch64 wheels at all (upstream
+  dropped it in 2.33). Those versions are absent from
+  `packages.aarch64-linux` rather than half-broken.
+- The devshell for THIS repo's plugins is x86_64-only (it pins
+  pants 2.29.0, whose `hdrhistogram` gap applies - see above).
+- A `pants` launcher already on PATH shadows this package's binary -
+  in shells where both exist, check `which pants`.
+- Pants still downloads your resolves at runtime (as upstream); they
+  live in Pants' caches, not the Nix store. Downloaded-tool plugins
+  (see Runtime behavior) must be re-pointed at PATH binaries - on
+  NixOS the download-and-exec path fails out of the box.
+
+## Pants plugins
 
 Reusable Pants build system utilities for Python projects, including custom backend plugins and macros.
 
-## Overview
+### Overview
 
 This repository provides:
 - **Pants Backends**: Distributable backends that export macros via `BuildFileAliases`
@@ -10,15 +160,15 @@ This repository provides:
 
 All backends use the isolated `gusi-pants-plugins` resolve, preventing dependency conflicts with consuming repositories.
 
-## Installation
+### Installation
 
-### Option 1: Git Submodule (Recommended)
+#### Option 1: Git Submodule (Recommended)
 
 Add this repository as a git submodule to your Pants project:
 
 ```bash
 # In your project root
-git submodule add https://github.com/G-USI/G-USI.git 3rdparty/pants/g-usi
+git submodule add https://codefloe.com/G-USI/g-usi.git 3rdparty/pants/g-usi
 git submodule update --init --recursive
 ```
 
@@ -83,7 +233,7 @@ pants generate-lockfiles --resolve=python-default
 - The plugin loads via `pythonpath` and doesn't need its own resolve or `subproject_roots` configuration
 - You don't need to add `pants.backend.plugin_development` to your backends - it's only used internally by the submodule
 
-### Option 2: Copy Files (Not Recommended)
+#### Option 2: Copy Files (Not Recommended)
 
 You can copy the backend/macro files directly into your repository, but this makes updates harder:
 
@@ -98,7 +248,7 @@ pythonpath = ["%(buildroot)s/src/python"]
 backend_packages.add = ["gusi.pants.backend.alembic"]
 ```
 
-### Option 3: PyPI (Future)
+#### Option 3: PyPI (Future)
 
 When published to PyPI, you'll be able to install via:
 
@@ -108,9 +258,9 @@ plugins = ["gusi-pants-plugins==1.0.0"]
 backend_packages.add = ["gusi.pants.backend.alembic"]
 ```
 
-## Usage
+### Usage
 
-### Using the Alembic Backend
+#### Using the Alembic Backend
 
 **Zero-config setup** - Just create a BUILD file:
 
@@ -121,11 +271,11 @@ alembic_migrations()
 ```
 
 **That's it!** When Pants processes this target, it automatically:
-- ✅ Generates `alembic.ini` with sensible defaults
-- ✅ Generates `env.py` with async/sync driver conversion
-- ✅ Generates `script.py.mako` migration template
-- ✅ Creates `versions/` directory for migrations
-- ✅ Infers all dependencies from your imports
+- Generates `alembic.ini` with sensible defaults
+- Generates `env.py` with async/sync driver conversion
+- Generates `script.py.mako` migration template
+- Creates `versions/` directory for migrations
+- Infers all dependencies from your imports
 
 Auto-generated targets: `#alembic_dep`, `#env.py`, `#resources`, `#resources2`, `#alembic`, plus database driver dependencies.
 
@@ -146,12 +296,12 @@ The Alembic backend leverages Pants' built-in Python import inference:
 4. **Everything just works** - No manual sys.path manipulation, no explicit dependency declarations
 
 **Benefits:**
-- ✅ Zero-config BUILD files - literally just `alembic_migrations()`
-- ✅ Automatic boilerplate generation - no manual setup needed
-- ✅ Clean env.py - async/sync driver conversion built-in
-- ✅ Automatic dependency inference - add/remove models, deps update automatically
-- ✅ Multi-database support - PostgreSQL, MySQL, SQLite, SQL Server drivers included
-- ✅ Optional customization - specify `resolve` only if you need a non-default resolver
+- Zero-config BUILD files - literally just `alembic_migrations()`
+- Automatic boilerplate generation - no manual setup needed
+- Clean env.py - async/sync driver conversion built-in
+- Automatic dependency inference - add/remove models, deps update automatically
+- Multi-database support - PostgreSQL, MySQL, SQLite, SQL Server drivers included
+- Optional customization - specify `resolve` only if you need a non-default resolver
 
 Common operations:
 
@@ -172,9 +322,9 @@ pants run '//src/python/myapp/migrations#alembic' -- \
     downgrade -1
 ```
 
-### Using Macros (if enabled)
+#### Using Macros (if enabled)
 
-#### python_service()
+##### python_service()
 
 ```python
 # src/python/myapp/service/BUILD
@@ -196,7 +346,7 @@ pants package //src/python/myapp/service:bin-split-src
 pants package //src/python/myapp/service:bin-split-reqs
 ```
 
-#### python_library()
+##### python_library()
 
 ```python
 # src/python/myapp/lib/utils/BUILD
@@ -207,11 +357,11 @@ python_library(
 )
 ```
 
-## Documentation
+### Documentation
 
-### Alembic Backend - Complete Setup Guide
+#### Alembic Backend - Complete Setup Guide
 
-#### Zero-Config Setup
+##### Zero-Config Setup
 
 To use the Alembic backend, you only need to create **1 file**:
 
@@ -220,20 +370,20 @@ To use the Alembic backend, you only need to create **1 file**:
 | **BUILD** | 1 | `alembic_migrations()` - that's it! |
 
 **All other files are auto-generated** when Pants processes the target:
-- ✅ **alembic.ini** - Generated with your migration path
-- ✅ **env.py** - Generated with async/sync driver conversion
-- ✅ **script.py.mako** - Standard Alembic migration template
-- ✅ **versions/** - Empty directory created automatically
+- **alembic.ini** - Generated with your migration path
+- **env.py** - Generated with async/sync driver conversion
+- **script.py.mako** - Standard Alembic migration template
+- **versions/** - Empty directory created automatically
 
 **Key features:**
-- ✅ **Automatic boilerplate generation** - No manual file creation
-- ✅ **Multi-database support** - PostgreSQL, MySQL, SQLite, SQL Server drivers included
-- ✅ **Async/sync driver conversion** - Works with asyncpg, aiomysql, etc.
-- ✅ **Zero configuration** - Sensible defaults for everything
-- ✅ **No `__init__.py` files** - Not needed
-- ✅ **No explicit dependencies** - Pants infers everything from imports
+- **Automatic boilerplate generation** - No manual file creation
+- **Multi-database support** - PostgreSQL, MySQL, SQLite, SQL Server drivers included
+- **Async/sync driver conversion** - Works with asyncpg, aiomysql, etc.
+- **Zero configuration** - Sensible defaults for everything
+- **No `__init__.py` files** - Not needed
+- **No explicit dependencies** - Pants infers everything from imports
 
-#### Step-by-Step Setup
+##### Step-by-Step Setup
 
 **1. Create the migrations directory:**
 
@@ -284,7 +434,7 @@ export DATABASE_URL="postgresql://user:pass@localhost/db"
 
 The plugin automatically converts async drivers to sync for Alembic compatibility.
 
-#### Generated Targets
+##### Generated Targets
 
 The `alembic_migrations()` macro automatically generates these targets:
 
@@ -299,7 +449,7 @@ The `alembic_migrations()` macro automatically generates these targets:
 - **`#commands`** - Virtual commands.py file (generated dynamically)
 - **Database driver dependencies** - #psycopg2_dep, #asyncpg_dep, #pymysql_dep, #aiomysql_dep, #aiosqlite_dep, #pyodbc_dep, #aioodbc_dep
 
-#### Convenience Commands
+##### Convenience Commands
 
 For common operations, use the convenience command shortcuts:
 
@@ -316,7 +466,7 @@ pants run '//src/python/myapp/migrations#downgrade'
 
 These commands automatically handle the config path and common options.
 
-#### Advanced Usage (Full Alembic CLI)
+##### Advanced Usage (Full Alembic CLI)
 
 The `#alembic` target automatically detects the config path, so `-c` is optional:
 
@@ -340,28 +490,28 @@ pants run '//src/python/myapp/migrations#alembic' -- \
     current
 ```
 
-#### Complete Working Example
+##### Complete Working Example
 
 Here's the **absolute minimum** to get started:
 
 ```
 src/python/myapp/
-├── models.py              # Your SQLAlchemy models with Base
-├── BUILD                  # python_sources()
-├── requirements.txt       # sqlalchemy>=2.0.0, alembic>=1.13.0
-└── migrations/
-    └── BUILD              # alembic_migrations() - 1 line!
+|-- models.py              # Your SQLAlchemy models with Base
+|-- BUILD                  # python_sources()
+|-- requirements.txt       # sqlalchemy>=2.0.0, alembic>=1.13.0
+`-- migrations/
+    `-- BUILD              # alembic_migrations() - 1 line!
 ```
 
 **After running any pants command, auto-generated files appear:**
 
 ```
 src/python/myapp/migrations/
-├── BUILD                  # Your 1-line file
-├── alembic.ini           # ✓ Auto-generated
-├── env.py                 # ✓ Auto-generated (customize imports)
-├── script.py.mako        # ✓ Auto-generated
-└── versions/              # ✓ Auto-created directory
+|-- BUILD                  # Your 1-line file
+|-- alembic.ini           # Auto-generated
+|-- env.py                 # Auto-generated (customize imports)
+|-- script.py.mako        # Auto-generated
+`-- versions/              # Auto-created directory
 ```
 
 **No `__init__.py` files needed anywhere!**
@@ -391,7 +541,7 @@ alembic>=1.13.0
 asyncpg>=0.29.0  # For PostgreSQL async support
 ```
 
-#### Common Issues
+##### Common Issues
 
 **1. "Can't find Python file env.py"**
 - Solution: Ensure `script_location = %(here)s` in `alembic.ini` (not an absolute path)
@@ -411,7 +561,7 @@ asyncpg>=0.29.0  # For PostgreSQL async support
 - Pants will infer dependencies from your imports - no need to specify `service_models`
 - Ensure your models are in a target that Pants can discover (use `python_sources()` in BUILD files)
 
-## Updating the Submodule
+### Updating the Submodule
 
 To get the latest updates from this repository:
 
@@ -428,25 +578,28 @@ git add 3rdparty/pants/g-usi
 git commit -m "Update G-USI pants plugins submodule"
 ```
 
-## Development
+### Development
 
 If you're contributing to this repository:
 
-### Setup
+#### Setup
 
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd pants-utils
+# Enter the development environment (devenv - https://devenv.sh)
+devenv shell
 
-# Enter Nix development environment (if using Nix)
-nix develop
+# Verify Pants (self-hosted from this repo's own nix/pants packaging)
+pants --version
 
-# Or ensure you have Pants installed
-curl --proto '=https' --tlsv1.2 -fsSL https://static.pantsbuild.org/setup/get-pants.sh | bash
+# Plugins import check
+pants list src/python/gusi::
 ```
 
-### Managing Dependencies
+Pure-flake consumers can use `nix develop` instead - the flake's
+`devShells.default` provides the same Pants. Both build against the same
+nixpkgs rev, so the derivations are identical and share store paths.
+
+#### Managing Dependencies
 
 This repository uses the `gusi-pants-plugins` resolve for all its internal code. This ensures complete isolation from consuming repositories.
 
@@ -462,7 +615,7 @@ git add 3rdparty/python/requirements.txt 3rdparty/python/gusi-pants-plugins.lock
 git commit -m "Update Python dependencies"
 ```
 
-### Testing Plugin Changes
+#### Testing Plugin Changes
 
 ```bash
 # Verify plugin loads
@@ -472,7 +625,7 @@ pants help alembic_migrations
 pants --version
 ```
 
-## Python Version Support
+### Python Version Support
 
 This repository supports Python 3.10 through 3.14.
 
@@ -482,11 +635,11 @@ Configure in your project's `pants.toml`:
 interpreter_constraints = [">=3.10,<3.15"]
 ```
 
-## Available Backends
+### Available Backends
 
-### gusi.pants.backend.alembic
+#### gusi.pants.backend.alembic
 
-**Status**: ✅ Available
+**Status**: Available
 
 Exports the `alembic_migrations()` macro via target generator.
 
@@ -494,11 +647,11 @@ Exports the `alembic_migrations()` macro via target generator.
 - `resolve` - (Optional) Python resolver to use. Defaults to `python-default` if not specified.
 
 **Features:**
-- ✅ **Automatic boilerplate generation** - Creates `alembic.ini`, `env.py`, `script.py.mako`, `versions/` on first run
-- ✅ **Multi-database support** - Includes drivers for PostgreSQL, MySQL, SQLite, SQL Server (both sync and async)
-- ✅ **Async/sync driver conversion** - Automatically converts `postgresql+asyncpg://` → `postgresql://` for Alembic
-- ✅ **Zero configuration** - Just create `BUILD` file with `alembic_migrations()`
-- ✅ **Automatic dependency inference** - Pants infers all dependencies from imports in env.py
+- **Automatic boilerplate generation** - Creates `alembic.ini`, `env.py`, `script.py.mako`, `versions/` on first run
+- **Multi-database support** - Includes drivers for PostgreSQL, MySQL, SQLite, SQL Server (both sync and async)
+- **Async/sync driver conversion** - Automatically converts `postgresql+asyncpg://` -> `postgresql://` for Alembic
+- **Zero configuration** - Just create `BUILD` file with `alembic_migrations()`
+- **Automatic dependency inference** - Pants infers all dependencies from imports in env.py
 
 **Auto-generates targets:**
 - `#alembic` - Main Alembic CLI binary
@@ -510,9 +663,9 @@ Exports the `alembic_migrations()` macro via target generator.
 - Fully self-contained - no external dependencies on plugin source
 - Distributable via PyPI or git submodule
 
-### gusi.pants.backend.python
+#### gusi.pants.backend.python
 
-**Status**: ✅ Available
+**Status**: Available
 
 Exports `python_library()` and `python_service()` macros via `BuildFileAliases`.
 
@@ -537,10 +690,37 @@ Exports `python_library()` and `python_service()` macros via `BuildFileAliases`.
 - `bin-split-src` - PEX with sources only
 - `bin-split-reqs` - PEX with requirements only
 
-### Future Backends
+#### Future Backends
 
 - `gusi.pants.backend.service_utils` - Python service utilities (planned)
 - `gusi.pants.backend.asyncapi_python` - AsyncAPI code generation (planned)
+
+## New Pants releases
+
+Regenerate the version data and commit it:
+
+```console
+$ nix/pants/scripts/list-versions.sh > /tmp/versions.txt
+$ nix/pants/scripts/gen-versions.sh /tmp/versions.txt
+$ git add nix/pants/versions/
+```
+
+Unknown versions then fail loudly if not generated.
+
+## Post-merge user actions
+
+After the monorepo merge is finalized, the operator (user) should:
+
+1. **Archive the standalone pants-nix repo** - `github:G-USI/pants-nix` is
+   superseded by this repo's packaging.
+2. **Rename this repo** - pick the final name; URL examples in this README
+   then need updating (see the note under *Pants from Nix*).
+3. **Update consumer pins** - repositories using
+   `inputs.pants-nix.url = "github:G-USI/pants-nix"` should switch to this
+   repo's flake; submodule consumers update their submodule remote to
+   `https://codefloe.com/G-USI/g-usi.git`.
+4. **Sync Codeberg/GitHub mirrors** - ensure both mirrors carry the merged
+   `dev`/`main` history.
 
 ## License
 

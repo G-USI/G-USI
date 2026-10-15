@@ -1,0 +1,15 @@
+# devenv - contributor environment (https://devenv.sh).
+#
+# Pants is self-hosted from this repo's own packaging: devenv.nix
+# callPackages ./nix/pants directly (no flake self-input - a path input's
+# narHash is machine-unstable, and a remote self-input would lag the
+# working tree). The nixpkgs input below MUST stay pinned to the exact
+# rev in flake.lock: with the same nixpkgs, the same builder files and
+# the same wheel hashes, devenv's pants derivation is bit-identical to
+# the flake's pinned builds - same store path, shared binary cache.
+# Run `devenv update` after changing inputs.
+inputs:
+  nixpkgs:
+    url: github:NixOS/nixpkgs/7fd4004d0511991fff3a0524856a9be09e28c5f0
+  devenv:
+    url: github:cachix/devenv/v2.4.0

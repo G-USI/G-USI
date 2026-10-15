@@ -8,7 +8,7 @@ RayJobTarget, which auto-generates per-file PythonSourceTargets. The goal rule
 uses the generator address directly for PexFromTargetsRequest, which expands to
 all generated PythonSourceTargets + their transitive deps.
 
-No PexBinary is generated — both ray-submit and package build PEXes via rules.
+No PexBinary is generated - both ray-submit and package build PEXes via rules.
 """
 
 from dataclasses import dataclass

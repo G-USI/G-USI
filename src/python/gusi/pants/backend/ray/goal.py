@@ -9,7 +9,7 @@ Both goals share a common build step (build_ray_job_outputs) that produces:
 2. Submit PEX - ray client + submit script (runs locally)
 3. Pinned requirements.txt - for cluster verification
 
-We never ship 3rd-party deps to the cluster — the Docker image has them pre-installed.
+We never ship 3rd-party deps to the cluster - the Docker image has them pre-installed.
 """
 
 from dataclasses import dataclass
@@ -102,7 +102,7 @@ def _resolve_pinned_requirements(
 
     # BFS with marker filtering: lockfile requires_dists include EVERY optional
     # dep for EVERY extra and EVERY platform. We filter on `extra == "X"` markers
-    # only — non-extra markers (python_version, sys_platform) are not filtered
+    # only - non-extra markers (python_version, sys_platform) are not filtered
     # since the cluster Docker image handles those.
     extras_map: dict[str, set[str]] = {}
     visited: set[str] = set()
@@ -159,7 +159,7 @@ def _resolve_pinned_requirements(
 
 
 # ---------------------------------------------------------------------------
-# Shared build step — both ray-submit and package delegate here.
+# Shared build step - both ray-submit and package delegate here.
 # ---------------------------------------------------------------------------
 
 
@@ -216,7 +216,7 @@ async def build_ray_job_outputs(request: RayJobBuildRequest) -> RayJobBuildOutpu
         job_entry_point_str = relative.replace("/", ".")
     job_main = EntryPoint.parse(job_entry_point_str)
 
-    # Resolve dependency targets first — used for job PEX and requirements.
+    # Resolve dependency targets first - used for job PEX and requirements.
     submit_script_addr = address.create_generated("_submit_script")
 
     dep_targets = await resolve_targets(
@@ -396,9 +396,9 @@ class RayJobPackageFieldSet(PackageFieldSet):
 async def package_ray_job(field_set: RayJobPackageFieldSet) -> BuiltPackage:
     """Build two PEXes and a requirements.txt, output to dist/.
 
-    1. ray_job.pex    — sources only (uploaded to cluster)
-    2. ray_submit.pex — submit script + ray client (runs locally)
-    3. requirements.txt — pinned transitive deps (cluster verification)
+    1. ray_job.pex    - sources only (uploaded to cluster)
+    2. ray_submit.pex - submit script + ray client (runs locally)
+    3. requirements.txt - pinned transitive deps (cluster verification)
     """
     address = field_set.address.maybe_convert_to_target_generator()
 

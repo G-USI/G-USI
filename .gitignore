@@ -4,6 +4,9 @@
 .vscode
 .pgdata
 
+# devenv state (https://devenv.sh)
+.devenv*
+
 # Created by https://www.toptal.com/developers/gitignore/api/vim,rust,emacs,linux,macos,pants,python,windows,jetbrains+all,visualstudiocode,terraform
 # Edit at https://www.toptal.com/developers/gitignore?templates=vim,rust,emacs,linux,macos,pants,python,windows,jetbrains+all,visualstudiocode,terraform
 
@@ -518,3 +521,5 @@ claude-cache/
 claude-code.log
 claude.log
 *.claude.log
+result
+result-*

@@ -95,7 +95,7 @@ async def find_putative_alembic_migrations_targets(
                 # In normal mode, the target generator will create the files
                 if missing:
                     print(
-                        f"⚠  Alembic boilerplate missing in {dir_name or '.'}: {', '.join(missing)}"
+                        f"(!)  Alembic boilerplate missing in {dir_name or '.'}: {', '.join(missing)}"
                     )
                     print(f"   Run any pants command to auto-generate these files.")
 

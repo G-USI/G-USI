@@ -79,10 +79,10 @@ class AlembicMigrationsTarget(TargetGenerator):
         pants list src/python/myapp/migrations::
 
     3. Files auto-generated:
-        ✓ alembic.ini - Configuration with script_location
-        ✓ env.py - Migration environment with async/sync driver conversion
-        ✓ script.py.mako - Migration template
-        ✓ versions/ - Empty directory for migrations
+        alembic.ini - Configuration with script_location
+        env.py - Migration environment with async/sync driver conversion
+        script.py.mako - Migration template
+        versions/ - Empty directory for migrations
 
     4. Customize env.py to import your models:
         from myapp.models import Base
@@ -117,7 +117,7 @@ class AlembicMigrationsTarget(TargetGenerator):
 
     - Automatic boilerplate generation - no manual file creation
     - Multi-database support - PostgreSQL, MySQL, SQLite, SQL Server drivers
-    - Async/sync driver conversion - postgresql+asyncpg:// → postgresql://
+    - Async/sync driver conversion - postgresql+asyncpg:// -> postgresql://
     - Automatic dependency inference - import models, Pants handles the rest
     - Zero configuration - just `alembic_migrations()`
 
@@ -159,10 +159,10 @@ Setup (copy-paste ready):
    ```
 
 4. Files automatically generated:
-   ✓ alembic.ini - Configuration with script_location
-   ✓ env.py - Migration environment with async/sync driver conversion
-   ✓ script.py.mako - Migration template
-   ✓ versions/ - Empty directory for migrations
+   alembic.ini - Configuration with script_location
+   env.py - Migration environment with async/sync driver conversion
+   script.py.mako - Migration template
+   versions/ - Empty directory for migrations
 
 5. Customize generated env.py to import your models:
    ```python
@@ -198,11 +198,11 @@ Generated Targets:
                     #aiosqlite_dep, #pyodbc_dep, #aioodbc_dep
 
 Key Features:
-  ✓ Automatic boilerplate generation - no manual file creation
-  ✓ Multi-database support - PostgreSQL, MySQL, SQLite, SQL Server
-  ✓ Async/sync driver conversion - postgresql+asyncpg:// → postgresql://
-  ✓ Auto dependency inference from imports
-  ✓ Zero configuration - just alembic_migrations()
+  Automatic boilerplate generation - no manual file creation
+  Multi-database support - PostgreSQL, MySQL, SQLite, SQL Server
+  Async/sync driver conversion - postgresql+asyncpg:// -> postgresql://
+  Auto dependency inference from imports
+  Zero configuration - just alembic_migrations()
 
 Parameters:
   resolve (optional) - Python resolver (default: python-default)

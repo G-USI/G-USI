@@ -84,25 +84,25 @@ def _ensure_alembic_boilerplate(spec_path: str) -> None:
     alembic_ini_path = migration_dir / "alembic.ini"
     if not alembic_ini_path.exists():
         alembic_ini_path.write_text(ALEMBIC_INI_TEMPLATE)
-        print(f"✓ Generated {alembic_ini_path}")
+        print(f"Generated {alembic_ini_path}")
 
     # Generate env.py if missing
     env_py_path = migration_dir / "env.py"
     if not env_py_path.exists():
         env_py_path.write_text(ENV_PY_TEMPLATE)
-        print(f"✓ Generated {env_py_path}")
+        print(f"Generated {env_py_path}")
 
     # Generate script.py.mako if missing
     script_mako_path = migration_dir / "script.py.mako"
     if not script_mako_path.exists():
         script_mako_path.write_text(SCRIPT_MAKO_TEMPLATE)
-        print(f"✓ Generated {script_mako_path}")
+        print(f"Generated {script_mako_path}")
 
     # Create versions directory if missing
     versions_dir = migration_dir / "versions"
     if not versions_dir.exists():
         versions_dir.mkdir(parents=True, exist_ok=True)
-        print(f"✓ Created {versions_dir}/")
+        print(f"Created {versions_dir}/")
 
 
 @rule
