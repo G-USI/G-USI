@@ -16,10 +16,23 @@ for tool in patchelf ldd flock; do
   }
 done
 
-CACHE="${PANTS_HOME:-$HOME/.cache/pants}/named_caches"
+# Cache root with a HOME-free fallback chain: devenv's non-interactive
+# entries (devenv shell -c, task runners) and other sandboxes can arrive
+# without HOME set, and `set -u` would abort on it. XDG precedence:
+# PANTS_HOME > $XDG_CACHE_HOME/pants > $HOME/.cache/pants > /tmp/pants.
+if [ -n "${PANTS_HOME:-}" ]; then
+  PANTS_CACHE_ROOT="$PANTS_HOME"
+elif [ -n "${XDG_CACHE_HOME:-}" ]; then
+  PANTS_CACHE_ROOT="$XDG_CACHE_HOME/pants"
+elif [ -n "${HOME:-}" ]; then
+  PANTS_CACHE_ROOT="$HOME/.cache/pants"
+else
+  PANTS_CACHE_ROOT="${TMPDIR:-/tmp}/pants"
+fi
+CACHE="$PANTS_CACHE_ROOT/named_caches"
 # scie-pants' interpreter cache (python-build-standalone trees) is used
 # by PEX venvs created under the official launcher - patch it too.
-NCE_CACHE="$HOME/.cache/nce"
+NCE_CACHE="${XDG_CACHE_HOME:-${HOME:-$PANTS_CACHE_ROOT}/.cache}/nce"
 # Keyed to this build's interpreter+rpath: any change to either (e.g.
 # the LD_LIBRARY_PATH removal) invalidates stamps from older wrappers
 # and forces one full re-sweep that re-judges every cached object.
@@ -34,7 +47,6 @@ fi
 # is safe - the in-flight sweep sees at least as much. The lock lives
 # OUTSIDE the scanned caches: recreating it inside would bump its ctime
 # above the stamp and defeat the fast path forever.
-PANTS_CACHE_ROOT="${PANTS_HOME:-$HOME/.cache/pants}"
 mkdir -p "$PANTS_CACHE_ROOT" 2>/dev/null || true
 exec 9>"$PANTS_CACHE_ROOT/.nix-sweep.lock"
 flock -n 9 || exit 0
