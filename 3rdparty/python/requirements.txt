@@ -1,2 +1,2 @@
-# Python dependencies for pants-utils
+# Python dependencies for g-usi
 # (currently empty - pants_requirements() in BUILD file provides Pants for IDE type checking)

@@ -30,7 +30,7 @@
         mkPants = pkgs: pkgs39: args: (pantsLib { inherit pkgs pkgs39; }).mkPants args;
         inherit (probe) latestVersion versionData;
         # Read a repo's pants.toml and build exactly the pinned version:
-        #   g-usi.lib.fromPantsToml pkgs pkgs39 ./pants.toml
+        #   gusi.lib.fromPantsToml pkgs pkgs39 ./pants.toml
         # or pass { file = ./pants.toml; extraPythons = [...]; } to
         # expose extra interpreters on the wrapper's PATH. Changing
         # [GLOBAL].pants_version in the toml re-resolves the package on

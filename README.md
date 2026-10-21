@@ -10,6 +10,21 @@ A nix monorepo with two roles in one repo:
    (`gusi.pants.backend.*`), developed in this same repo and consumed by
    other repositories via git submodule.
 
+## Compatibility contract & releases
+
+g-usi is consumed through release pins, not branches: annotated `vX.Y.Z`
+tags cut from `dev`. The rule that makes the two consumption modes
+coherent: **the flake input pin and the plugins submodule pin must
+resolve to the SAME tag** - one revision, two pins, bumped together.
+The full contract (consumption modes, bump procedure, additive
+parameter surface, runtime ownership boundary, support policy) lives in
+[docs/COMPAT.md](docs/COMPAT.md).
+
+Releases are prepared with `scripts/release.sh vX.Y.Z` (runs
+`nix flake check`, creates the annotated tag) and pushed by the human.
+The pre-monorepo FHS-era flake (at or before `31bb99f`) is retired -
+see [FHS retirement](docs/COMPAT.md#fhs-retirement).
+
 ## Layout
 
 ```
@@ -48,11 +63,16 @@ $ nix shell github:G-USI/G-USI#pants-2_31_0 --command pants --version
 
 ### Using it in your repo
 
-Add the input:
+Add the input - **pinned to a release tag, never a branch** (the
+github-mirror equivalent is `github:G-USI/G-USI/vX.Y.Z`):
 
 ```nix
-inputs.g-usi.url = "github:G-USI/G-USI";
+inputs.gusi.url = "git+https://codefloe.com/G-USI/g-usi.git?ref=vX.Y.Z";
 ```
+
+If you also consume the plugins, the submodule must resolve to the same
+tag - see [docs/COMPAT.md](docs/COMPAT.md) for the bump procedure and
+pin cross-check.
 
 devenv works the same way as with any flake input: add the input, then put
 the built package into `devenv.nix`'s `packages` list. Point
@@ -69,7 +89,7 @@ devShells.x86_64-linux.default =
   in
   pkgs.mkShell {
     packages = [
-      (g-usi.pinned.x86_64-linux.fromPantsToml ./pants.toml)
+      (gusi.pinned.x86_64-linux.fromPantsToml ./pants.toml)
       pkgs.python314   # interpreters your resolves need
       pkgs.cargo       # toolchains sandboxed processes need
       pkgs.rustc
@@ -82,12 +102,12 @@ identical across machines - the precondition for a shared binary cache. To
 build against **your** nixpkgs instead, use the lib builders:
 
 ```nix
-packages = [ (g-usi.lib.fromPantsToml pkgs pkgs39 ./pants.toml) ];
+packages = [ (gusi.lib.fromPantsToml pkgs pkgs39 ./pants.toml) ];
 # or pick a version explicitly:
-packages = [ (g-usi.lib.mkPants pkgs pkgs39 { version = "2.31.0"; }) ];
+packages = [ (gusi.lib.mkPants pkgs pkgs39 { version = "2.31.0"; }) ];
 ```
 
-where `pkgs39 = g-usi.inputs.nixpkgs-py39.legacyPackages.x86_64-linux`
+where `pkgs39 = gusi.inputs.nixpkgs-py39.legacyPackages.x86_64-linux`
 (needed for Pants 2.21-2.24, which ride python 3.9). If your `pants.toml`
 lives outside a git-tracked path (e.g. a bare repo without commits), pin
 explicitly with `pinned.mkPantsPinned { version = "..."; }`.
@@ -130,6 +150,10 @@ explicitly with `pinned.mkPantsPinned { version = "..."; }`.
 
 ### Requirements & limitations
 
+- **Consumption floor**: the first release tag (`v0.1.0`) is the minimum
+  supported pin. The pre-monorepo FHS-era flake (at or before `31bb99f`)
+  is retired with no upgrade path - the patchelf-native surface replaces
+  it outright ([FHS retirement](docs/COMPAT.md#fhs-retirement)).
 - x86_64-linux and aarch64-linux (native wheels for both; CI currently
   verifies x86_64 only - arm64 runner coverage is deferred until a
   Codefloe arm label exists). macOS is not supported.
@@ -163,13 +187,17 @@ All backends use the isolated `gusi-pants-plugins` resolve, preventing dependenc
 
 ### Installation
 
-#### Option 1: Git Submodule (Recommended)
+#### Option 1: Git Submodule at the Same Tag (Supported)
 
-Add this repository as a git submodule to your Pants project:
+Add this repository as a git submodule to your Pants project. If you
+also use the flake input for the nix environment, the submodule and the
+flake input MUST resolve to the same `vX.Y.Z` tag - they are one
+dependency, never two ([docs/COMPAT.md](docs/COMPAT.md)):
 
 ```bash
-# In your project root
+# In your project root (checkout the tag your flake input pins)
 git submodule add https://codefloe.com/G-USI/g-usi.git 3rdparty/pants/g-usi
+git -C 3rdparty/pants/g-usi checkout vX.Y.Z
 git submodule update --init --recursive
 ```
 
@@ -234,14 +262,20 @@ pants generate-lockfiles --resolve=python-default
 - The plugin loads via `pythonpath` and doesn't need its own resolve or `subproject_roots` configuration
 - You don't need to add `pants.backend.plugin_development` to your backends - it's only used internally by the submodule
 
-#### Option 2: Copy Files (Not Recommended)
+#### Option 2: Copy Files (Outside the Compat Contract)
 
-You can copy the backend/macro files directly into your repository, but this makes updates harder:
+Copying the backend/macro files directly into your repository is
+vendoring: updates can no longer ride a tag bump, the copies drift from
+the packaged/tested surface, and it violates the compat contract's
+"downstream never patches g-usi" rule
+([docs/COMPAT.md](docs/COMPAT.md)). It is kept only as a historical
+escape hatch and carries no support. If you must, copy from a
+submodule checkout at your pinned tag:
 
 ```bash
-# Copy backends
+# Copy backends (from the submodule checked out at your tag)
 mkdir -p src/python/gusi/pants/backend
-cp -r pants-utils/src/python/gusi/pants/backend/* src/python/gusi/pants/backend/
+cp -r 3rdparty/pants/g-usi/src/python/gusi/pants/backend/* src/python/gusi/pants/backend/
 
 # Configure pants.toml
 [GLOBAL]
@@ -258,6 +292,11 @@ When published to PyPI, you'll be able to install via:
 plugins = ["gusi-pants-plugins==1.0.0"]
 backend_packages.add = ["gusi.pants.backend.alembic"]
 ```
+
+PyPI distribution would be a third consumption mode with its own
+version pin; until it exists and the contract is amended to govern it
+(same-tag discipline cannot apply to a PyPI version), this option is
+out of contract.
 
 ### Usage
 
@@ -564,20 +603,41 @@ asyncpg>=0.29.0  # For PostgreSQL async support
 
 ### Updating the Submodule
 
-To get the latest updates from this repository:
+Submodule updates are tag bumps, never branch pulls - and if you
+consume the flake input too, both pins move to the same tag in one
+commit (full procedure and cross-checks:
+[docs/COMPAT.md](docs/COMPAT.md)):
 
 ```bash
-# Pull latest changes
-cd 3rdparty/pants/g-usi
-git pull origin main
+# Move the submodule to a release tag
+git -C 3rdparty/pants/g-usi fetch --tags origin
+git -C 3rdparty/pants/g-usi checkout vX.Y.Z
 
-# Return to your project root
+# Return to your project root and commit the pin
 cd ../../..
-
-# Commit the submodule update
 git add 3rdparty/pants/g-usi
-git commit -m "Update G-USI pants plugins submodule"
+git commit -m "bump g-usi -> vX.Y.Z"
 ```
+
+### Convergence Target (Experimental)
+
+The end state retires the submodule: the plugins ride the flake input's
+store path, leaving ONE pin. In nix-generated config:
+
+```nix
+pythonpath = [ "${inputs.gusi}/src/python" ]
+```
+
+or, for a static `pants.toml`, via Pants env interpolation with the
+consumer's devenv exporting `GUSI_SRC = "${inputs.gusi}"`:
+
+```toml
+[GLOBAL]
+pythonpath = ["%(env.GUSI_SRC)s/src/python"]
+```
+
+This mode is experimental until proven end to end on a real consumer;
+until promoted, dual-pin-same-tag is the contract.
 
 ### Development
 
@@ -724,7 +784,11 @@ After the monorepo merge is finalized, the operator (user) should:
    repo's flake; submodule consumers update their submodule remote to
    `https://codefloe.com/G-USI/g-usi.git`.
 4. **Sync Codeberg/GitHub mirrors** - ensure both mirrors carry the merged
-   `dev`/`main` history.
+   `dev` history.
+5. **Cut the first release tag** - once the compat contract has landed,
+   run `scripts/release.sh v0.1.0` and push the tag it prepares (the
+   script prints the command; the push is the human's). Both downstream
+   pins then have a revision to agree on.
 
 ## License
 
