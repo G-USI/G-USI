@@ -389,7 +389,7 @@ async def ray_submit(
 
 @dataclass(frozen=True)
 class RayJobPackageFieldSet(PackageFieldSet):
-    required_fields = ()
+    required_fields = (EntryPointField,)
 
 
 @rule(desc="Build ray_job package")
