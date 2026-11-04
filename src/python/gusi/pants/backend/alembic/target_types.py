@@ -64,6 +64,30 @@ class DisableBoilerplateGenerationField(BoolField):
     default = False
 
 
+class RuntimeAssetsField(BoolField):
+    """Emit a package __init__.py target carrying the tree's runtime assets.
+
+    When True, alembic_migrations() additionally generates:
+    - migrations/__init__.py (empty, created if missing) as a python_source
+      target whose dependency closure is the full runtime surface of the
+      tree: env.py, alembic.ini, script.py.mako, versions/*.py (as
+      resources), and the database drivers (via env.py's requirements).
+    - versions/*.py as resource targets (owned by the plugin, so consumers
+      must not keep their own python_sources() BUILD in versions/).
+
+    Consumers then declare ONE import edge — ``import <pkg>.migrations`` —
+    and import inference pulls the entire tree; no manual dependency lists.
+    Required for test/exec contexts that drive alembic's file-based runtime
+    (ScriptDirectory reads env.py/versions from disk, so import inference
+    alone cannot see them).
+
+    Default: False (targets unchanged; existing consumers unaffected).
+    """
+
+    alias = "runtime_assets"
+    default = False
+
+
 class AlembicMigrationsTarget(TargetGenerator):
     """Generates Alembic migration infrastructure targets with automatic boilerplate generation.
 
@@ -136,6 +160,7 @@ class AlembicMigrationsTarget(TargetGenerator):
         InterpreterConstraintsField,
         PythonResolveField,
         DisableBoilerplateGenerationField,
+        RuntimeAssetsField,
     )
     help = """Generates Alembic migration infrastructure with automatic boilerplate generation.
 

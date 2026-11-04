@@ -25,6 +25,7 @@ from gusi.pants.backend.alembic.target_types import (
     AlembicMigrationsTarget,
     AlembicWrapperPyTarget,
     DisableBoilerplateGenerationField,
+    RuntimeAssetsField,
 )
 from gusi.pants.backend.alembic.templates import (  # type: ignore[import-untyped]
     ALEMBIC_INI_TEMPLATE,
@@ -64,12 +65,14 @@ def _get_buildroot() -> Path:
     raise RuntimeError("Could not find pants.toml - not in a Pants project?")
 
 
-def _ensure_alembic_boilerplate(spec_path: str) -> None:
+def _ensure_alembic_boilerplate(spec_path: str, runtime_assets: bool = False) -> None:
     """Generate Alembic boilerplate files if they don't exist.
 
     Args:
         spec_path: Directory path where the alembic_migrations target is defined
                    (relative to buildroot, e.g., "src/python/myapp/migrations")
+        runtime_assets: When True, also generate an empty migrations/__init__.py
+                        (the package-import dependency edge for runtime_assets).
     """
     # Check if we should skip auto-generation (e.g., during tailor --check)
     # This env var can be set to prevent auto-generation
@@ -104,6 +107,13 @@ def _ensure_alembic_boilerplate(spec_path: str) -> None:
         versions_dir.mkdir(parents=True, exist_ok=True)
         print(f"Created {versions_dir}/")
 
+    # Generate the package __init__.py if missing (runtime_assets dep edge)
+    if runtime_assets:
+        init_path = migration_dir / "__init__.py"
+        if not init_path.exists():
+            init_path.write_text("")
+            print(f"Generated {init_path}")
+
 
 @rule
 async def generate_alembic_targets(
@@ -116,10 +126,11 @@ async def generate_alembic_targets(
     resolve = generator[PythonResolveField].value
     disable_generation = generator[DisableBoilerplateGenerationField].value
     interpreter_constraints = generator[InterpreterConstraintsField].value
+    runtime_assets = generator[RuntimeAssetsField].value
 
     # Generate boilerplate files if missing (unless disabled)
     if not disable_generation:
-        _ensure_alembic_boilerplate(generator.address.spec_path)
+        _ensure_alembic_boilerplate(generator.address.spec_path, runtime_assets)
 
     # Build dependencies for the env.py target
     # Pants automatically infers Python imports from env.py
@@ -204,12 +215,53 @@ async def generate_alembic_targets(
         address=generator.address.create_generated("resources2"),
     )
 
+    # Runtime assets (runtime_assets=True): versions/*.py as plugin-owned
+    # resources, plus a package __init__.py target whose dependency closure is
+    # the tree's full runtime surface (env.py carries the drivers). Consumers
+    # then declare ONE import edge — `import <pkg>.migrations` — and import
+    # inference pulls the whole tree; no manual dependency lists. Needed
+    # because alembic's runtime is file-based (ScriptDirectory execs env.py
+    # and versions from disk), which import inference cannot see.
+    runtime_targets = []
+    if runtime_assets:
+        versions_dir = _get_buildroot() / generator.address.spec_path / "versions"
+        for version_file in sorted(versions_dir.glob("*.py")):
+            runtime_targets.append(
+                ResourceTarget(
+                    {"source": f"versions/{version_file.name}"},
+                    address=generator.address.create_generated(
+                        f"version_{version_file.stem}"
+                    ),
+                )
+            )
+        package_init = PythonSourceTarget(
+            {
+                "source": "__init__.py",
+                "dependencies": [
+                    f":{generator.address.target_name}#env.py",
+                    f":{generator.address.target_name}#resources",
+                    f":{generator.address.target_name}#resources2",
+                    *[
+                        f":{generator.address.target_name}#{t.address.generated_name}"
+                        for t in runtime_targets
+                    ],
+                ],
+                **req_fields,
+            },
+            address=generator.address.create_generated("package_init"),
+        )
+
     # Common dependencies for pex_binary target
     common_deps = [
         f":{generator.address.target_name}#env.py",
         f":{generator.address.target_name}#resources",
         f":{generator.address.target_name}#resources2",
     ]
+    if runtime_assets:
+        common_deps += [
+            f":{generator.address.target_name}#{t.address.generated_name}"
+            for t in runtime_targets
+        ] + [f":{generator.address.target_name}#package_init"]
 
     # Generate virtual alembic_wrapper.py target (triggers GeneratedSources)
     wrapper_src = AlembicWrapperPyTarget(
@@ -297,10 +349,12 @@ async def generate_alembic_targets(
             migration_src,
             resources,
             resources2,
+            *runtime_targets,
             alembic_bin,
             wrapper_src,
             commands_src,
             *convenience_binaries,
+            *([package_init] if runtime_assets else []),
         ],
     )
 
