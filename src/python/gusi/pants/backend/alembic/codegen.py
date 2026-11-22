@@ -3,8 +3,9 @@
 from dataclasses import dataclass
 
 from pants.backend.python.target_types import PythonSourceField
-from pants.engine.fs import CreateDigest, Digest, FileContent, Snapshot
-from pants.engine.rules import Get, collect_rules, rule
+from pants.engine.fs import CreateDigest, FileContent
+from pants.engine.intrinsics import create_digest, digest_to_snapshot
+from pants.engine.rules import collect_rules, implicitly, rule
 from pants.engine.target import (
     GenerateSourcesRequest,
     GeneratedSources,
@@ -55,8 +56,7 @@ async def generate_alembic_commands_py(
     content = get_commands_template(config_path)
 
     # Create file digest with full path
-    digest = await Get(
-        Digest,
+    digest = await create_digest(
         CreateDigest(
             [
                 FileContent(
@@ -65,11 +65,11 @@ async def generate_alembic_commands_py(
                     is_executable=False,
                 )
             ]
-        ),
+        )
     )
 
     # Convert to snapshot
-    snapshot = await Get(Snapshot, Digest, digest)
+    snapshot = await digest_to_snapshot(digest, **implicitly())
 
     return GeneratedSources(snapshot)
 
@@ -112,8 +112,7 @@ async def generate_alembic_wrapper_py(
     content = get_alembic_wrapper_template(config_path)
 
     # Create file digest with full path
-    digest = await Get(
-        Digest,
+    digest = await create_digest(
         CreateDigest(
             [
                 FileContent(
@@ -122,11 +121,11 @@ async def generate_alembic_wrapper_py(
                     is_executable=False,
                 )
             ]
-        ),
+        )
     )
 
     # Convert to snapshot
-    snapshot = await Get(Snapshot, Digest, digest)
+    snapshot = await digest_to_snapshot(digest, **implicitly())
 
     return GeneratedSources(snapshot)
 

@@ -12,13 +12,13 @@ from pants.backend.python.target_types import (
     PythonSourceTarget,
 )
 from pants.core.target_types import ResourceTarget
-from pants.engine.rules import collect_rules, rule, Get
+from pants.engine.rules import collect_rules, implicitly, rule
 from pants.engine.target import (
     GeneratedTargets,
     GenerateTargetsRequest,
 )
 from pants.engine.unions import UnionRule
-from pants.source.source_root import SourceRoot, SourceRootRequest
+from pants.source.source_root import SourceRootRequest, get_source_root
 
 from gusi.pants.backend.alembic.target_types import (
     AlembicCommandsPyTarget,
@@ -232,9 +232,8 @@ async def generate_alembic_targets(
     )
 
     # Get the source root for this target
-    source_root = await Get(
-        SourceRoot,
-        SourceRootRequest(PurePath(generator.address.spec_path)),
+    source_root = await get_source_root(
+        SourceRootRequest(PurePath(generator.address.spec_path)), **implicitly()
     )
 
     # Compute module path relative to source root

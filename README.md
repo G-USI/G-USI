@@ -165,7 +165,7 @@ explicitly with `pinned.mkPantsPinned { version = "..."; }`.
   dropped it in 2.33). Those versions are absent from
   `packages.aarch64-linux` rather than half-broken.
 - The devshell for THIS repo's plugins is x86_64-only (it pins
-  pants 2.29.0, whose `hdrhistogram` gap applies - see above).
+  pants 2.33.2; aarch64 packaging is era-dependent - see above).
 - A `pants` launcher already on PATH shadows this package's binary -
   in shells where both exist, check `which pants`.
 - Pants still downloads your resolves at runtime (as upstream); they
@@ -205,7 +205,7 @@ Configure your `pants.toml`:
 
 ```toml
 [GLOBAL]
-pants_version = "2.29.0"  # Or your Pants version
+pants_version = "2.33.2"  # Or your Pants version
 
 # Add the submodule to Python path so Pants can import the backends
 pythonpath = ["%(buildroot)s/3rdparty/pants/g-usi/src/python"]
@@ -700,6 +700,10 @@ interpreter_constraints = [">=3.10,<3.15"]
 ```
 
 ### Available Backends
+
+All backends target Pants' call-by-name Rules API and require
+Pants >= 2.29: the `pants.engine.intrinsics` wrappers they use exist
+at 2.29, and Pants 2.32 removed the old `Get` constructor entirely.
 
 #### gusi.pants.backend.alembic
 

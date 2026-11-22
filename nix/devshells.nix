@@ -1,9 +1,10 @@
 # Plugins dev shell. Pants is resolved by the flake from this repo's
 # pants.toml and passed in as a derivation. The aarch64 branch ignores
-# `pants` as a derivation: the pinned release is not packaged there
-# (hdrhistogram ships no aarch64 wheels), so it explains instead of
-# failing. Reading `pants.version` stays lazy - it never forces the
-# unbuildable derivation.
+# `pants` as a derivation: plugin dev is CI-verified on x86_64 only,
+# and whether the pinned release is packaged for aarch64 is
+# era-dependent, so it explains instead of failing. Reading
+# `pants.version` stays lazy - it never forces an unbuildable
+# derivation.
 {
   system,
   nixpkgs,
@@ -21,7 +22,7 @@
     else
       nixpkgs.legacyPackages.${system}.mkShell {
         shellHook = ''
-          echo "pants ${pants.version} is not packaged for aarch64 (hdrhistogram) - plugins dev is x86_64-only"
+          echo "pants ${pants.version}: plugins dev is x86_64-only (CI-verified); aarch64 packaging is era-dependent - see nix/pants/versions (2.33+ packaged)"
         '';
       };
 }

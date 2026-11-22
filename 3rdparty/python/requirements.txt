@@ -1,2 +1,6 @@
 # Python dependencies for g-usi
-# (currently empty - pants_requirements() in BUILD file provides Pants for IDE type checking)
+# (pants_requirements() in the BUILD file provides Pants itself for IDE type
+#  checking; pytest is pinned directly because the test targets import it in
+#  the default resolve — testutil already pulls it in transitively)
+
+pytest>=7

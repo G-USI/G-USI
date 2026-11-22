@@ -93,3 +93,7 @@ jobs:
         run: |
           nix develop -c pants lint ::
           nix develop -c pants lint ::
+
+      - name: Run plugin test suite
+        run: |
+          nix develop -c pants test ::

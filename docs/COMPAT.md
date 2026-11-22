@@ -124,6 +124,10 @@ the patchelf-native surface is a replacement, not a successor, of it.
   human** - the script never pushes; it prints the exact command.
 - `v0.1.0` is the baseline: the first dev commit carrying this contract.
   Everything before it is history, not a release.
+- `v0.2.0` ships the Pants 2.33.2 upgrade as a Y (minor) bump per the
+  semantics below - newly packaged Pants releases are additive; the
+  `v0.1.0` baseline (cut at `a749596`, still on Pants 2.29.0) stays
+  the pin target for 2.29-era consumers.
 
 Version semantics (semver with the usual 0.x caveat - during `0.x`, a
 minor bump may break; `1.0` declares the contract stable):
@@ -227,7 +231,9 @@ edit.
   new releases land as minor bumps. Interpreter eras: 2.21-2.24 ->
   python3.9 (via the `nixpkgs-py39` input), 2.25-2.31 -> python3.11,
   2.32+ -> python3.14. On aarch64, 2.27.0-2.32.1 are not packaged
-  (upstream `hdrhistogram` ships no arm64 wheels).
+  (a gap-era dependency ships no arm64 wheels); upstream resumed
+  arm64 wheels at 2.32.2 and the packaged set is dual-arch again
+  from 2.33.0 through 2.33.2.
 - **nixpkgs**: the pinned builders build against this flake's
   nixpkgs-unstable pin - identical store paths for every consumer.
   Downstream may bump its own nixpkgs freely; the nightly CI lane

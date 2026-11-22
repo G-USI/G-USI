@@ -10,8 +10,13 @@ from pants.core.goals.tailor import (
     PutativeTargets,
     PutativeTargetsRequest,
 )
-from pants.engine.fs import DigestContents, PathGlobs, Paths
-from pants.engine.rules import Get, collect_rules, rule
+from pants.engine.fs import PathGlobs
+from pants.engine.intrinsics import (
+    get_digest_contents,
+    path_globs_to_digest,
+    path_globs_to_paths,
+)
+from pants.engine.rules import collect_rules, implicitly, rule
 from pants.engine.unions import UnionRule
 from pants.util.logging import LogLevel
 
@@ -51,17 +56,19 @@ async def find_putative_alembic_migrations_targets(
     This rule checks BEFORE target generation happens, capturing the initial state.
     """
     # Look for BUILD files that might contain alembic_migrations()
-    build_paths = await Get(Paths, PathGlobs(["**/BUILD"]))
+    build_paths = await path_globs_to_paths(PathGlobs(["**/BUILD"]))
 
     # Also look for existing alembic.ini files to suggest targets for them
-    alembic_ini_paths = await Get(Paths, PathGlobs(["**/alembic.ini"]))
+    alembic_ini_paths = await path_globs_to_paths(PathGlobs(["**/alembic.ini"]))
 
     putative_targets = []
 
     # Check BUILD files for alembic_migrations() calls
     # We need to do this check EARLY, before target generation creates files
     if build_paths.files:
-        build_contents = await Get(DigestContents, PathGlobs(["**/BUILD"]))
+        build_contents = await get_digest_contents(
+            await path_globs_to_digest(PathGlobs(["**/BUILD"])), **implicitly()
+        )
         buildroot = _get_buildroot()
 
         for file_content in build_contents:
@@ -130,8 +137,8 @@ async def find_putative_alembic_migrations_targets(
         )
 
         # Check that env.py and script.py.mako exist
-        required_files = await Get(
-            Paths, PathGlobs([env_py_path, script_mako_path, path])
+        required_files = await path_globs_to_paths(
+            PathGlobs([env_py_path, script_mako_path, path])
         )
 
         # Only suggest if all required files are present
